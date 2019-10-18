@@ -51,13 +51,19 @@ class Test(unittest.TestCase):
             capv_lib.capvput(motor + '.STOP', 1)
             #Go away from limit switch
             lib.movePosition(motor, tc_no, self.per30_UserPosition, self.moving_velocity, self.acceleration)
+
+            if (self.saved_JVEL == 0.0) :
+                capv_lib.capvput(motor + '.JVEL', self.jogging_velocity)
+            destination = capv_lib.capvget(motor + '.LLM')
+            rbv = capv_lib.capvget(motor + '.RBV')
+            jvel = capv_lib.capvget(motor + '.JVEL')
+            timeout = lib.calcTimeOut(motor, destination, jvel) * 2
+
             #switch off the soft limits. Depending on the postion
             # low or high must be set to 0 first
             lib.setSoftLimitsOff(motor)
 
-            if (self.saved_JVEL == 0.0) :
-                capv_lib.capvput(motor + '.JVEL', self.jogging_velocity)
-            capv_lib.capvput(motor + '.JOGR', 1, wait=True)
+            capv_lib.capvput(motor + '.JOGR', 1, wait=True, timeout=timeout)
             # Get values, check them later
             lvio = int(capv_lib.capvget(motor + '.LVIO'))
             mstaE = int(capv_lib.capvget(motor + '.MSTA'))
