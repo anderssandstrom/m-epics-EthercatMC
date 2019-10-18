@@ -490,7 +490,8 @@ class motor_lib(object):
         outStr = 'Sim.this.' + var + '=' + value
         print('%s: DbgStrToMCU motor=%s var=%s value=%s outStr=%s' % \
               (tc_no, motor, var, value, outStr))
-        assert(len(outStr) < 40)
+        if not motor.startswith('pva://'):
+            assert(len(outStr) < 40)
         capv_lib.capvput(motor + '-DbgStrToMCU', outStr, wait=True)
         err = int(capv_lib.capvget(motor + '-Err', use_monitor=False))
         print('%s: DbgStrToMCU motor=%s var=%s value=%s err=%d' % \
