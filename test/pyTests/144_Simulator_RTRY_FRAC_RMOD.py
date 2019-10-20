@@ -42,7 +42,11 @@ def setMotorStartPos(tself, motor, tc_no, startpos):
 def positionAndBacklash(tself, motor, tc_no, rmod, encRel, motorStartPos, motorEndPos):
     ###########
     # expected and actual
-    fileName = "/tmp/" + motor.replace(':', '-') + "-" + str(tc_no)
+    if motor.startswith('pva://'):
+        mot = motor[6:]
+    else:
+        mot = motor
+    fileName = "/tmp/" + mot.replace(':', '-') + "-" + str(tc_no)
     expFileName = fileName + ".exp"
     actFileName = fileName + ".act"
     dbgFileName = fileName + ".dbg"

@@ -42,7 +42,11 @@ def setMotorStartPos(tself, motor, tc_no, startpos):
 def positionAndBacklash(tself, motor, tc_no, rmod, encRel, motorStartPos, motorEndPos):
     ###########
     # expected and actual
-    fileName = "/tmp/" + motor.replace(':', '-') + "-" + str(tc_no)
+    if motor.startswith('pva://'):
+        mot = motor[6:]
+    else:
+        mot = motor
+    fileName = "/tmp/" + mot.replace(':', '-') + "-" + str(tc_no)
     expFileName = fileName + ".exp"
     actFileName = fileName + ".act"
     dbgFileName = fileName + ".dbg"
@@ -54,7 +58,10 @@ def positionAndBacklash(tself, motor, tc_no, rmod, encRel, motorStartPos, motorE
     lib.setValueOnSimulator(motor, tc_no, "log", actFileName)
     time.sleep(2)
     #
-    capv_lib.capvput(motor + '.VAL', motorEndPos, wait=True)
+    ##velo = capv_lib.capvget(motor + '.VELO')
+    ##timeout = lib.calcTimeOut(motor, motorEndPos, velo) * 2
+
+    capv_lib.capvput(motor + '.VAL', motorEndPos, wait=False)
     lib.setValueOnSimulator(motor, tc_no, "dbgCloseLogFile", "1")
     time.sleep(2)
     lib.setValueOnSimulator(motor, tc_no, "bManualSimulatorMode", 0)
