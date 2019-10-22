@@ -475,7 +475,11 @@ asynStatus EthercatMCGvlAxis::poll(bool *moving)
   unsigned idxAuxBits = 0;
 
   snprintf(pC_->outString_, sizeof(pC_->outString_),
-           "%sMAIN.aAxesState_EPICS[%d].AxisStatus.wStatusWord?",
+           "%sGvl_App.axes_comm[%d].wStatusWord?;"
+           "%sGvl_App.axes_comm[%d].fTargetValue?;"
+           "%sGvl_App.axes_comm[%d].fActualValue?",
+           drvlocal.adsport_str, axisNo_,
+           drvlocal.adsport_str, axisNo_,
            drvlocal.adsport_str, axisNo_);
   comStatus = pC_->writeReadOnErrorDisconnect();
   if (comStatus) {
@@ -485,8 +489,9 @@ asynStatus EthercatMCGvlAxis::poll(bool *moving)
               EthercatMCstrStatus(comStatus), (int)comStatus);
     return asynError;
   }
-  nvals = sscanf(pC_->inString_, "%u", &statusReasonAux);
-  if (nvals != 1) {
+  nvals = sscanf(pC_->inString_, "%u;%lf;%lf",
+                 &statusReasonAux, &targetPosition, &actPosition);
+  if (nvals != 3) {
     /* rubbish on the line */
     asynPrint(pC_->pasynUserController_, ASYN_TRACE_ERROR|ASYN_TRACEIO_DRIVER,
               "%spoll(%d) nvals=%d out=%s in=%s \n",
