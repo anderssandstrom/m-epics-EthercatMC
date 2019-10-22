@@ -15,6 +15,7 @@ FILENAME... EthercatMCController.cpp
 #include <epicsExport.h>
 #include "EthercatMCController.h"
 #include "EthercatMCAxis.h"
+#include "EthercatMCGvlAxis.h"
 #include "EthercatMCIndexerAxis.h"
 
 #ifndef ASYN_TRACE_INFO
@@ -28,6 +29,7 @@ const static char *const strEthercatMCConfigController = "EthercatMCConfigContro
 const static char *const strEthercatMCConfigOrDie      = "EthercatMCConfigOrDie";
 const static char *const strEthercatMCReadController   = "EthercatMCReadController";
 const static char *const strEthercatMCCreateAxisDef    = "EthercatMCCreateAxis";
+const static char *const strEthercatMCCreateGvlAxisDef  = "EthercatMCCreateGvlAxis";
 const static char *const strEthercatMCCreateIndexerAxisDef = "EthercatMCCreateIndexerAxis";
 const static char *const strCtrlReset = ".ctrl.ErrRst";
 
@@ -861,12 +863,20 @@ iocshArg * const EthercatMCCreateIndexerAxisArgs[] = {&EthercatMCCreateAxisArg0,
 static const iocshFuncDef EthercatMCCreateAxisDef = {strEthercatMCCreateAxisDef, 4,
                                                      EthercatMCCreateAxisArgs};
 
+static const iocshFuncDef EthercatMCCreateGvlAxisDef = {strEthercatMCCreateGvlAxisDef, 4,
+                                                        EthercatMCCreateAxisArgs};
+
 static const iocshFuncDef EthercatMCCreateIndexerAxisDef = {strEthercatMCCreateIndexerAxisDef, 4,
                                                      EthercatMCCreateIndexerAxisArgs};
 
 static void EthercatMCCreateAxisCallFunc(const iocshArgBuf *args)
 {
   EthercatMCCreateAxis(args[0].sval, args[1].ival, args[2].ival, args[3].sval);
+}
+
+static void EthercatMCCreateGvlAxisCallFunc(const iocshArgBuf *args)
+{
+  EthercatMCCreateGvlAxis(args[0].sval, args[1].ival, args[2].ival, args[3].sval);
 }
 
 static void EthercatMCCreateIndexerAxisCallFunc(const iocshArgBuf *args)
@@ -881,6 +891,7 @@ static void EthercatMCControllerRegister(void)
   iocshRegister(&EthercatMCConfigControllerDef, EthercatMCConfigContollerCallFunc);
   iocshRegister(&EthercatMCReadControllerDef,   EthercatMCReadContollerCallFunc);
   iocshRegister(&EthercatMCCreateAxisDef,       EthercatMCCreateAxisCallFunc);
+  iocshRegister(&EthercatMCCreateGvlAxisDef,    EthercatMCCreateGvlAxisCallFunc);
   iocshRegister(&EthercatMCCreateIndexerAxisDef,EthercatMCCreateIndexerAxisCallFunc);
 }
 
