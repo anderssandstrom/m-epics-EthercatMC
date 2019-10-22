@@ -10,25 +10,7 @@ extern "C" {
 };
 
 typedef struct {
-  /* Gvl members */
-  double fVelocity;
-  double fPosition;
-  double fAcceleration;
-  int bLimitFwd;
-  int bLimitBwd;
-  int bEnabled;
-  int bError;
-  int nErrorId;
-  double fActPosition;
-  int bHomed;
-  int bBusy;
-  /* needed */
-  /* nHomeProc
-     fHomePos */
-  /* neither V1 nor V2 nor Gvl, but calculated here */
-  int mvnNRdyNex; /* Not in struct. Calculated in poll() */
-  int motorStatusDirection; /* Not in struct. Calculated in pollAll() */
-  int motorDiffPostion;     /* Not in struct. Calculated in poll() */
+  unsigned  wStatusWord;
 } st_gvl_axis_status_type;
 
 class epicsShareClass EthercatMCGvlAxis : public asynMotorAxis
@@ -79,6 +61,7 @@ private:
 
   EthercatMCController *pC_;
   struct {
+    st_gvl_axis_status_type old_st_axis_status;
     double scaleFactor;
     double eres;
     const char *externalEncoderStr;
@@ -101,17 +84,10 @@ private:
     eeAxisPollNowType eeAxisPollNow;
 
     struct {
-      int          nMotionAxisID;     /* Needed for ADR commands */
-      unsigned int statusVer        :1;
       unsigned int oldStatusDisconnected : 1;
-      unsigned int sErrorMessage    :1; /* From MCU */
       unsigned int initialPollNeeded :1;
+      unsigned int sErrorMessage :1;
     }  dirty;
-
-    struct {
-      int          statusVer;           /* 0==V1, busy old style 1==V1, new style*/
-      unsigned int bV1BusyNewStyle  :1;
-    }  supported;
 
     /* Error texts when we talk to the controller, there is not an "OK"
        Or, failure in setValueOnAxisVerify() */

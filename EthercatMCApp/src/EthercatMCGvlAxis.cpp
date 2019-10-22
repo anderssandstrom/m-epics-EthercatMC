@@ -331,10 +331,7 @@ void EthercatMCGvlAxis::callParamCallbacksUpdateError()
   const char *msgTxtFromDriver = NULL;
   int EPICS_nErrorId = drvlocal.MCU_nErrorId;
   drvlocal.eeAxisError = eeAxisErrorNoError;
-  if (drvlocal.supported.statusVer == -1) {
-    drvlocal.eeAxisError = eeAxisErrorNotFound;
-    msgTxtFromDriver = "Not found";
-  } else if (EPICS_nErrorId) {
+  if (EPICS_nErrorId) {
     /* Error from MCU */
     drvlocal.eeAxisError = eeAxisErrorMCUError;
     msgTxtFromDriver = &drvlocal.sErrorMessage[0];
@@ -427,19 +424,26 @@ asynStatus EthercatMCGvlAxis::pollAll(bool *moving, st_axis_status_type *pst_axi
  * \param[out] moving A flag that is set indicating that the axis is moving (true) or done (false). */
 asynStatus EthercatMCGvlAxis::poll(bool *moving)
 {
-  asynStatus status = asynError;
+  asynStatus comStatus = asynError;
+  st_gvl_axis_status_type st_axis_status;
+  memset(&st_axis_status, 0, sizeof(st_axis_status));
   snprintf(pC_->outString_, sizeof(pC_->outString_),
            "%sMAIN.aAxesState_EPICS[%d].AxisStatus.wStatusWord?",
            drvlocal.adsport_str, axisNo_);
-  status = pC_->writeReadOnErrorDisconnect();
-
-  asynPrint(pC_->pasynUserController_, ASYN_TRACE_ERROR|ASYN_TRACEIO_DRIVER,
-            "%spoll out=\"%s\" in=\"%s\"\n",
-            modNamEMC, pC_->outString_, pC_->inString_);
+  comStatus = pC_->writeReadOnErrorDisconnect();
+  if (comStatus) {
+    asynPrint(pC_->pasynUserController_, ASYN_TRACE_ERROR|ASYN_TRACEIO_DRIVER,
+              "%sout=%s in=%s return=%s (%d)\n",
+              modNamEMC, pC_->outString_, pC_->inString_,
+              EthercatMCstrStatus(comStatus), (int)comStatus);
+    return asynError;
+  }
 
   //callParamCallbacksUpdateError();
 
-  return status;
+  memcpy(&drvlocal.old_st_axis_status, &st_axis_status,
+         sizeof(drvlocal.old_st_axis_status));
+  return asynSuccess;
 }
 
 /** Set the motor closed loop status
