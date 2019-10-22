@@ -137,6 +137,9 @@ EthercatMCGvlAxis::EthercatMCGvlAxis(EthercatMCController *pC, int axisNo,
         pThisOption += strlen(adsPort_str);
         int adsPort = atoi(pThisOption);
         if (adsPort > 0) {
+          /* Save adsport_str for the poller */
+          snprintf(drvlocal.adsport_str, sizeof(drvlocal.adsport_str),
+                   "ADSPORT=%d/", adsPort);
           drvlocal.adsPort = (unsigned)adsPort;
         }
       } else if (!strncmp(pThisOption, homProc_str, strlen(homProc_str))) {
@@ -425,8 +428,16 @@ asynStatus EthercatMCGvlAxis::pollAll(bool *moving, st_axis_status_type *pst_axi
 asynStatus EthercatMCGvlAxis::poll(bool *moving)
 {
   asynStatus status = asynError;
+  snprintf(pC_->outString_, sizeof(pC_->outString_),
+           "%sMAIN.aAxesState_EPICS[%d].AxisStatus.wStatusWord?",
+           drvlocal.adsport_str, axisNo_);
+  status = pC_->writeReadOnErrorDisconnect();
 
-  callParamCallbacksUpdateError();
+  asynPrint(pC_->pasynUserController_, ASYN_TRACE_ERROR|ASYN_TRACEIO_DRIVER,
+            "%spoll out=\"%s\" in=\"%s\"\n",
+            modNamEMC, pC_->outString_, pC_->inString_);
+
+  //callParamCallbacksUpdateError();
 
   return status;
 }
