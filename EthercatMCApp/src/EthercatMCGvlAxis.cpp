@@ -207,19 +207,6 @@ asynStatus EthercatMCGvlAxis::initialPoll(void)
 asynStatus EthercatMCGvlAxis::initialPollInternal(void)
 {
   asynStatus status = asynSuccess;
-
-  if (drvlocal.axisFlags & AMPLIFIER_ON_FLAG_CREATE_AXIS) {
-    /* Enable the amplifier when the axis is created,
-       but wait until we have a connection to the controller.
-       After we lost the connection, Re-enable the amplifier
-       See AMPLIFIER_ON_FLAG */
-    status = enableAmplifier(1);
-  }
-  if (status == asynSuccess && drvlocal.dirty.oldStatusDisconnected) {
-    asynPrint(pC_->pasynUserController_, ASYN_TRACE_ERROR|ASYN_TRACEIO_DRIVER,
-              "%sconnected(%d)\n", modNamEMC, axisNo_);
-    drvlocal.dirty.oldStatusDisconnected = 0;
-  }
   return status;
 }
 
@@ -251,37 +238,8 @@ void EthercatMCGvlAxis::report(FILE *fp, int level)
  */
 asynStatus EthercatMCGvlAxis::move(double position, int relative, double minVelocity, double maxVelocity, double acceleration)
 {
-  asynStatus status = asynSuccess;
-
-  drvlocal.eeAxisWarning = eeAxisWarningNoWarning;
-  /* Do range check */
-  if (!drvlocal.scaleFactor) {
-    drvlocal.eeAxisWarning = eeAxisWarningCfgZero;
-    return asynSuccess;
-  } else if (!maxVelocity) {
-    drvlocal.eeAxisWarning = eeAxisWarningVeloZero;
-    return asynSuccess;
-  }
-
-  if (status == asynSuccess) status = stopAxisInternal(__FUNCTION__, 0);
-  if (relative){
-    double actPosition;
-    pC_->getDoubleParam(axisNo_, pC_->motorPosition_, &actPosition);
-    position = position - actPosition;
-  }
-  snprintf(pC_->outString_, sizeof(pC_->outString_),
-           "%sGvl.axes[%d].fPosition=%f;"
-           "%sGvl.axes[%d].fVelocity=%f;"
-           "%sGvl.axes[%d].fAcceleration=%f;"
-           "%sGvl.axes[%d].bStart=1",
-           drvlocal.adsport_str, axisNo_, position * drvlocal.scaleFactor,
-           drvlocal.adsport_str, axisNo_, maxVelocity * drvlocal.scaleFactor,
-           drvlocal.adsport_str, axisNo_, acceleration * drvlocal.scaleFactor,
-           drvlocal.adsport_str, axisNo_);
-#ifndef motorWaitPollsBeforeReadyString
-  drvlocal.waitNumPollsBeforeReady += WAITNUMPOLLSBEFOREREADY;
-#endif
-  return pC_->writeReadACK(ASYN_TRACE_INFO);
+  asynStatus status = asynError;
+  return status;
 }
 
 
@@ -311,18 +269,6 @@ asynStatus EthercatMCGvlAxis::home(double minVelocity, double maxVelocity, doubl
 asynStatus EthercatMCGvlAxis::moveVelocity(double minVelocity, double maxVelocity, double acceleration)
 {
   asynStatus status = asynError;
-  drvlocal.eeAxisWarning = eeAxisWarningNoWarning;
-  /* Do range check */
-  if (!drvlocal.scaleFactor) {
-    drvlocal.eeAxisWarning = eeAxisWarningCfgZero;
-    return asynSuccess;
-  } else if (!maxVelocity) {
-    drvlocal.eeAxisWarning = eeAxisWarningVeloZero;
-    return asynSuccess;
-  }
-
-  //if (status == asynSuccess) status = stopAxisInternal(__FUNCTION__, 0);
-
   return status;
 
 }
@@ -334,63 +280,19 @@ asynStatus EthercatMCGvlAxis::moveVelocity(double minVelocity, double maxVelocit
  */
 asynStatus EthercatMCGvlAxis::setPosition(double value)
 {
-  asynStatus status = asynSuccess;
-  int homProc = 0;
-
-  status = pC_->getIntegerParam(axisNo_,
-                                pC_->EthercatMCHomProc_,
-                                &homProc);
-  asynPrint(pC_->pasynUserController_, ASYN_TRACE_INFO,
-            "%ssetPosition(%d  homProc=%d position=%g egu=%g\n",
-            modNamEMC, axisNo_,  homProc, value, value * drvlocal.scaleFactor );
-
-  if (homProc != HOMPROC_MANUAL_SETPOS)
-    return asynError;
-
+  asynStatus status = asynError;
   return status;
 }
 
 asynStatus EthercatMCGvlAxis::resetAxis(void)
 {
   asynStatus status = asynError;
-#if 0
-  int EthercatMCErr;
-  bool moving;
-  /* Reset command error, if any */
-  drvlocal.eeAxisWarning = eeAxisWarningNoWarning;
-  drvlocal.cmdErrorMessage[0] = 0;
-  status = pC_->getIntegerParam(axisNo_, pC_->EthercatMCErr_, &EthercatMCErr);
-  asynPrint(pC_->pasynUserController_, ASYN_TRACE_INFO,
-            "%sresetAxis(%d status=%d EthercatMCErr)=%d\n",
-             modNamEMC, axisNo_, (int)status, EthercatMCErr);
-
-  if (EthercatMCErr) {
-    /* Soft reset of the axis */
-    status = setValueOnAxis("bExecute", 0);
-    if (status) goto resetAxisReturn;
-    status = setValueOnAxisVerify("bReset", "bReset", 1, 20);
-    if (status) goto resetAxisReturn;
-    epicsThreadSleep(.1);
-    status = setValueOnAxisVerify("bReset", "bReset", 0, 20);
-  }
-  resetAxisReturn:
-  asynPrint(pC_->pasynUserController_, ASYN_TRACE_INFO,
-            "%sresetAxis(%d) status=%s (%d)\n",
-             modNamEMC, axisNo_, pasynManager->strStatus(status), (int)status);
-  /* do a poll */
-  poll(&moving);
-#endif
   return status;
 }
 
 bool EthercatMCGvlAxis::pollPowerIsOn(void)
 {
-  int ret = 0;
-  asynStatus status = getValueFromAxis(".bEnabled", &ret);
-  if (!status && ret)
-    return true;
-  else
-    return false;
+  return false;
 }
 
 /** Enable the amplifier on an axis
@@ -398,64 +300,7 @@ bool EthercatMCGvlAxis::pollPowerIsOn(void)
  */
 asynStatus EthercatMCGvlAxis::enableAmplifier(int on)
 {
-  asynStatus status = asynSuccess;
-  unsigned counter = 10;
-  bool moving;
-  int ret;
-  const char *enableEnabledReadback = "bEnabled";
-
-#ifdef POWERAUTOONOFFMODE2
-  {
-    int autoPower;
-    pC_->getIntegerParam(axisNo_, pC_->motorPowerAutoOnOff_, &autoPower);
-    if (autoPower) {
-      /* The record/driver will check for enabled - don't do that here */
-      enableEnabledReadback = "bEnable";
-    }
-  }
-#endif
-  on = on ? 1 : 0; /* either 0 or 1 */
-  status = getValueFromAxis(".bEnabled", &ret);
-  /* Either it went wrong OR the amplifier IS as it should be */
-  if (status || (ret == on)) return status;
-  if (!on) {
-    /* Amplifier is on and should be turned off.
-       Stop the axis by setting bEnable to 0 */
-    status = stopAxisInternal(__FUNCTION__, 0);
-    if (status) return status;
-  }
-  status = setValueOnAxis("bEnable", on);
-  if (status || !on) return status; /* this went wrong OR it should be turned off */
-  while (counter) {
-    epicsThreadSleep(.1);
-    snprintf(pC_->outString_, sizeof(pC_->outString_),
-             "%sMain.M%d.%s?;%sMain.M%d.%s?",
-             drvlocal.adsport_str, axisNo_, "bBusy",
-             drvlocal.adsport_str, axisNo_, enableEnabledReadback);
-    status = pC_->writeReadOnErrorDisconnect();
-    asynPrint(pC_->pasynUserController_, ASYN_TRACE_INFO,
-              "%sout=%s in=%s status=%s (%d)\n",
-               modNamEMC, pC_->outString_, pC_->inString_,
-              pasynManager->strStatus(status), (int)status);
-    if (status) return status;
-    if (!strcmp("0;1", pC_->inString_)) {
-      /* bBusy == 0; bEnable(d) == 1 */
-      goto enableAmplifierPollAndReturn;
-    } else if (!strcmp("1;1", pC_->inString_)) {
-      /* bBusy=1 is OK */
-      goto enableAmplifierPollAndReturn;
-    }
-    counter--;
-  }
-  /* if we come here, it went wrong */
-  if (!drvlocal.cmdErrorMessage[0]) {
-    snprintf(drvlocal.cmdErrorMessage, sizeof(drvlocal.cmdErrorMessage)-1,
-             "E: enableAmplifier(%d) failed. out=%s in=%s\n",
-             axisNo_, pC_->outString_, pC_->inString_);
-    /* The poller co-ordinates the writing into the parameter library */
-  }
-enableAmplifierPollAndReturn:
-  poll(&moving);
+  asynStatus status = asynError;
   return status;
 
 }
@@ -466,13 +311,6 @@ enableAmplifierPollAndReturn:
 asynStatus EthercatMCGvlAxis::stopAxisInternal(const char *function_name, double acceleration)
 {
   asynStatus status = asynError;
-  asynPrint(pC_->pasynUserController_, ASYN_TRACE_INFO,
-            "%sstopAxisInternal(%d) (%s)\n", modNamEMC, axisNo_, function_name);
-#if 0
-  if (!(pC_->features_ & FEATURE_BITS_GVL)) {
-    status = setValueOnAxisVerify("bExecute", "bExecute", 0, 1);
-  }
-#endif
   return status;
 }
 
@@ -574,212 +412,6 @@ void EthercatMCGvlAxis::callParamCallbacksUpdateError()
 
 asynStatus EthercatMCGvlAxis::pollAll(bool *moving, st_axis_status_type *pst_axis_status)
 {
-  asynStatus comStatus;
-
-  int motor_axis_no = 0;
-  int nvals = 0;
-  const char * const Main_dot_str = "Main.";
-  const size_t       Main_dot_len = strlen(Main_dot_str);
-  struct {
-    double velocitySetpoint;
-    double fDecceleration;
-    int cycleCounter;
-    unsigned int EtherCATtime_low32;
-    unsigned int EtherCATtime_high32;
-    int command;
-    int cmdData;
-    int reset;
-    int moving;
-    int stall;
-  } notUsed;
-  if (drvlocal.dirty.initialPollNeeded) {
-    comStatus = initialPoll();
-    if (comStatus) return comStatus;
-  }
-
-  if (pC_->features_ & FEATURE_BITS_GVL) {
-    snprintf(pC_->outString_, sizeof(pC_->outString_),
-             "%sGvl.axes[%d].fActPosition?;"
-             "%sGvl.axes[%d].bError?;"
-             "%sGvl.axes[%d].bBusy?;"
-             "%sGvl.axes[%d].bLimitFwd?;"
-             "%sGvl.axes[%d].bLimitBwd?;"
-             "%sGvl.axes[%d].bHomed?;"
-             "%sGvl.axes[%d].bEnabled?",
-             drvlocal.adsport_str, axisNo_,
-             drvlocal.adsport_str, axisNo_,
-             drvlocal.adsport_str, axisNo_,
-             drvlocal.adsport_str, axisNo_,
-             drvlocal.adsport_str, axisNo_,
-             drvlocal.adsport_str, axisNo_,
-             drvlocal.adsport_str, axisNo_);
-    asynPrint(pC_->pasynUserController_, ASYN_TRACE_DEBUG,
-              "%sout=%s\n",
-              modNamEMC, pC_->outString_);
-    comStatus = pC_->writeReadOnErrorDisconnect();
-    if (comStatus) return comStatus;
-    nvals = sscanf(pC_->inString_,
-                   "%lf;%d;%d;%d;%d;%d;%d",
-                   &pst_axis_status->fActPosition,
-                   &pst_axis_status->bError,
-                   &pst_axis_status->bBusy,
-                   &pst_axis_status->bLimitFwd,
-                   &pst_axis_status->bLimitBwd,
-                   &pst_axis_status->bHomed,
-                   &pst_axis_status->bEnabled);
-    asynPrint(pC_->pasynUserController_, ASYN_TRACE_DEBUG,
-              "%sin=%s nvals=%d\n",
-              modNamEMC, pC_->inString_, nvals);
-    if (nvals != 7) {
-      goto pollAllWrongnvals;
-    }
-    motor_axis_no = axisNo_;
-  } else if (pC_->features_ & FEATURE_BITS_V2) {
-    /* V2 is supported, use it. */
-    snprintf(pC_->outString_, sizeof(pC_->outString_),
-            "%sMain.M%d.stAxisStatusV2?", drvlocal.adsport_str, axisNo_);
-    comStatus = pC_->writeReadOnErrorDisconnect();
-    if (!strncasecmp(pC_->inString_,  Main_dot_str, Main_dot_len)) {
-      nvals = sscanf(&pC_->inString_[Main_dot_len],
-                     "M%d.stAxisStatusV2="
-                     "%lf,%lf,%lf,%lf,%lf,%lf,%lf,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
-                     &motor_axis_no,
-                     &pst_axis_status->fPosition,
-                     &pst_axis_status->fActPosition,
-                     &pst_axis_status->encoderRaw,          /* Send as uint64; parsed as double ! */
-                     &notUsed.velocitySetpoint,
-                     &pst_axis_status->fActVelocity,
-                     &pst_axis_status->fAcceleration,
-                     &notUsed.fDecceleration,
-                     &notUsed.cycleCounter,
-                     &notUsed.EtherCATtime_low32,
-                     &notUsed.EtherCATtime_high32,
-                     &pst_axis_status->bEnable,
-                     &pst_axis_status->bEnabled,
-                     &pst_axis_status->bExecute,
-                     &notUsed.command,
-                     &notUsed.cmdData,
-                     &pst_axis_status->bLimitBwd,
-                     &pst_axis_status->bLimitFwd,
-                     &pst_axis_status->bHomeSensor,
-                     &pst_axis_status->bError,
-                     &pst_axis_status->nErrorId,
-                     &notUsed.reset,
-                     &pst_axis_status->bHomed,
-                     &pst_axis_status->bBusy,
-                     &pst_axis_status->atTarget,
-                     &notUsed.moving,
-                     &notUsed.stall);
-    }
-    if (nvals == 27) {
-      pst_axis_status->mvnNRdyNex = pst_axis_status->bBusy || !pst_axis_status->atTarget;
-    }
-  } else if (pC_->features_ & FEATURE_BITS_V1) {
-    /* Read the complete Axis status */
-    snprintf(pC_->outString_, sizeof(pC_->outString_),
-            "%sMain.M%d.stAxisStatus?", drvlocal.adsport_str, axisNo_);
-    asynPrint(pC_->pasynUserController_, ASYN_TRACE_DEBUG,
-              "%sout=%s\n",
-              modNamEMC, pC_->outString_);
-    comStatus = pC_->writeReadOnErrorDisconnect();
-    if (comStatus) return comStatus;
-    if (!strncasecmp(pC_->inString_,  Main_dot_str, Main_dot_len)) {
-      nvals = sscanf(&pC_->inString_[Main_dot_len],
-                     "M%d.stAxisStatus="
-                     "%d,%d,%d,%u,%u,%lf,%lf,%lf,%lf,%d,"
-                     "%d,%d,%d,%lf,%d,%d,%d,%u,%lf,%lf,%lf,%d,%d",
-                     &motor_axis_no,
-                     &pst_axis_status->bEnable,        /*  1 */
-                     &pst_axis_status->bReset,         /*  2 */
-                     &pst_axis_status->bExecute,       /*  3 */
-                     &pst_axis_status->nCommand,       /*  4 */
-                     &pst_axis_status->nCmdData,       /*  5 */
-                     &pst_axis_status->fVelocity,      /*  6 */
-                     &pst_axis_status->fPosition,      /*  7 */
-                     &pst_axis_status->fAcceleration,  /*  8 */
-                     &pst_axis_status->fDecceleration, /*  9 */
-                     &pst_axis_status->bJogFwd,        /* 10 */
-                     &pst_axis_status->bJogBwd,        /* 11 */
-                     &pst_axis_status->bLimitFwd,      /* 12 */
-                     &pst_axis_status->bLimitBwd,      /* 13 */
-                     &pst_axis_status->fOverride,      /* 14 */
-                     &pst_axis_status->bHomeSensor,    /* 15 */
-                     &pst_axis_status->bEnabled,       /* 16 */
-                     &pst_axis_status->bError,         /* 17 */
-                     &pst_axis_status->nErrorId,       /* 18 */
-                     &pst_axis_status->fActVelocity,   /* 19 */
-                     &pst_axis_status->fActPosition,   /* 20 */
-                     &pst_axis_status->fActDiff,       /* 21 */
-                     &pst_axis_status->bHomed,         /* 22 */
-                     &pst_axis_status->bBusy           /* 23 */);
-    }
-    asynPrint(pC_->pasynUserController_, ASYN_TRACE_DEBUG,
-              "%sin=%s nvals=%d\n",
-              modNamEMC, pC_->inString_, nvals);
-    if (nvals != 24) {
-      goto pollAllWrongnvals;
-    }
-
-    /* V1 new style: mvnNRdyNex follows bBusy */
-    if (pC_->features_ & (FEATURE_BITS_ECMC | FEATURE_BITS_SIM))
-      drvlocal.supported.bV1BusyNewStyle = 1;
-
-    pst_axis_status->mvnNRdyNex = pst_axis_status->bBusy && pst_axis_status->bEnabled;
-    if (!drvlocal.supported.bV1BusyNewStyle) {
-      /* "V1 old style":done when bEcecute is 0 */
-      pst_axis_status->mvnNRdyNex &= pst_axis_status->bExecute;
-    }
-  } /* End of V1 */
-  /* From here on, either V1 or V2 is supported */
-  if (drvlocal.dirty.statusVer) {
-    if (pC_->features_ & FEATURE_BITS_V2)
-      drvlocal.supported.statusVer = 2;
-    else if ((pC_->features_ & FEATURE_BITS_V1) && !drvlocal.supported.bV1BusyNewStyle)
-      drvlocal.supported.statusVer = 0;
-    else if ((pC_->features_ & FEATURE_BITS_V1) && drvlocal.supported.bV1BusyNewStyle)
-      drvlocal.supported.statusVer = 1;
-    asynPrint(pC_->pasynUserController_, ASYN_TRACE_INFO,
-              "%spollAll(%d) nvals=%d V1=%x V2=%x sim=%x ecmc=%x GVL=%x bV1BusyNew=%d Ver=%d cmd/data=%d/%d fPos=%f fActPos=%f\n",
-              modNamEMC, axisNo_, nvals,
-              pC_->features_ & FEATURE_BITS_V1,
-              pC_->features_ & FEATURE_BITS_V2,
-              pC_->features_ & FEATURE_BITS_SIM,
-              pC_->features_ & FEATURE_BITS_ECMC,
-              pC_->features_ & FEATURE_BITS_GVL,
-              drvlocal.supported.bV1BusyNewStyle,
-              drvlocal.supported.statusVer,
-              pst_axis_status->nCommand,
-              pst_axis_status->nCmdData,
-              pst_axis_status->fPosition,
-              pst_axis_status->fActPosition);
-#ifdef motorFlagsHomeOnLsString
-    setIntegerParam(pC_->motorFlagsHomeOnLs_, 1);
-#endif
-#ifdef motorFlagsStopOnProblemString
-    setIntegerParam(pC_->motorFlagsStopOnProblem_, 0);
-#endif
-    drvlocal.dirty.statusVer = 0;
-  }
-  if (axisNo_ != motor_axis_no) return asynError;
-
-#if 0
-  /* Use previous fActPosition and current fActPosition to calculate direction.*/
-  if (pst_axis_status->fActPosition > drvlocal.old_st_axis_status.fActPosition) {
-    pst_axis_status->motorDiffPostion = 1;
-    pst_axis_status->motorStatusDirection = 1;
-  } else if (pst_axis_status->fActPosition < drvlocal.old_st_axis_status.fActPosition) {
-    pst_axis_status->motorDiffPostion = 1;
-    pst_axis_status->motorStatusDirection = 0;
-  }
-#endif
-  return asynSuccess;
-
-
-pollAllWrongnvals:
-  drvlocal.supported.statusVer = -1;
-  asynPrint(pC_->pasynUserController_, ASYN_TRACE_INFO,
-            "%spollAll(%d) nvals=%d in=%s\n",
-            modNamEMC, axisNo_, nvals, pC_->inString_);
   return asynSuccess;
 }
 
@@ -792,214 +424,19 @@ pollAllWrongnvals:
  * \param[out] moving A flag that is set indicating that the axis is moving (true) or done (false). */
 asynStatus EthercatMCGvlAxis::poll(bool *moving)
 {
-  asynStatus comStatus = asynSuccess;
-  st_axis_status_type st_axis_status;
-#ifndef motorWaitPollsBeforeReadyString
-  int waitNumPollsBeforeReady_ = drvlocal.waitNumPollsBeforeReady;
-#endif
+  asynStatus status = asynError;
 
-  if (drvlocal.supported.statusVer == -1) {
-    callParamCallbacksUpdateError();
-    return asynSuccess;
-  }
-  /* Driver not yet initialized, do nothing */
-  if (!drvlocal.scaleFactor) return comStatus;
-
-  memset(&st_axis_status, 0, sizeof(st_axis_status));
-  comStatus = pollAll(moving, &st_axis_status);
-  if (comStatus) {
-    asynPrint(pC_->pasynUserController_, ASYN_TRACE_ERROR|ASYN_TRACEIO_DRIVER,
-              "%sout=%s in=%s return=%s (%d)\n",
-              modNamEMC, pC_->outString_, pC_->inString_,
-              pasynManager->strStatus(comStatus), (int)comStatus);
-    goto skip;
-  }
-
-  if (drvlocal.cfgDebug_str) {
-    asynStatus comStatus;
-    snprintf(pC_->outString_, sizeof(pC_->outString_), "%s", drvlocal.cfgDebug_str);
-    comStatus = pC_->writeReadOnErrorDisconnect();
-    if (!comStatus) {
-      updateMsgTxtFromDriver(pC_->inString_);
-    }
-  }
-
-  setIntegerParam(pC_->motorStatusHomed_, st_axis_status.bHomed);
-  drvlocal.homed = st_axis_status.bHomed;
-  setIntegerParam(pC_->motorStatusCommsError_, 0);
-  setIntegerParam(pC_->motorStatusAtHome_, st_axis_status.bHomeSensor);
-  setIntegerParam(pC_->motorStatusLowLimit_, !st_axis_status.bLimitBwd);
-  setIntegerParam(pC_->motorStatusHighLimit_, !st_axis_status.bLimitFwd);
-  setIntegerParam(pC_->motorStatusPowerOn_, st_axis_status.bEnabled);
-  setDoubleParam(pC_->EthercatMCVelAct_, st_axis_status.fActVelocity);
-  setDoubleParam(pC_->EthercatMCAcc_RB_, st_axis_status.fAcceleration);
-
-#ifndef motorWaitPollsBeforeReadyString
-  if (drvlocal.waitNumPollsBeforeReady) {
-    *moving = true;
-  }
-  else
-#endif
-  {
-    *moving = st_axis_status.mvnNRdyNex ? true : false;
-    if (!st_axis_status.mvnNRdyNex &&
-        !(pC_->features_ & FEATURE_BITS_ECMC)) {
-      /* not moving: poll the parameters for this axis */
-#if 0
-      switch (drvlocal.eeAxisPollNow) {
-      case pollNowReadScaling:
-        readScaling(axisID);
-        drvlocal.eeAxisPollNow = pollNowReadMonitoring;
-        break;
-      case pollNowReadMonitoring:
-        readMonitoring(axisID);
-        drvlocal.eeAxisPollNow = pollNowReadBackSoftLimits;
-        break;
-      case pollNowReadBackSoftLimits:
-        readBackSoftLimits();
-        drvlocal.eeAxisPollNow = pollNowReadBackVelocities;
-        break;
-      case pollNowReadBackVelocities:
-      default:
-        readBackVelocities(axisID);
-        drvlocal.eeAxisPollNow = pollNowReadScaling;
-        break;
-      }
-#endif
-    }
-  }
-
-
-  /* if (drvlocal.nCommandActive != NCOMMANDHOME) */
-  {
-    setDoubleParam(pC_->motorPosition_,
-                   st_axis_status.fActPosition / drvlocal.scaleFactor);
-    setDoubleParam(pC_->motorEncoderPosition_,
-                   st_axis_status.fActPosition / drvlocal.scaleFactor);
-    //drvlocal.old_st_axis_status.fActPosition = st_axis_status.fActPosition;
-    setDoubleParam(pC_->EthercatMCVel_RB_, st_axis_status.fVelocity);
-  }
-
-#if 0
-  if (drvlocal.old_st_axis_status.bHomed != st_axis_status.bHomed) {
-    asynPrint(pC_->pasynUserController_, ASYN_TRACE_INFO,
-              "%spoll(%d) homed=%d\n",
-              modNamEMC, axisNo_, st_axis_status.bHomed);
-    drvlocal.old_st_axis_status.bHomed =  st_axis_status.bHomed;
-  }
-  if (drvlocal.old_st_axis_status.bLimitBwd != st_axis_status.bLimitBwd) {
-    asynPrint(pC_->pasynUserController_, ASYN_TRACE_INFO,
-              "%spoll(%d) LLS=%d\n",
-              modNamEMC, axisNo_, !st_axis_status.bLimitBwd);
-    drvlocal.old_st_axis_status.bLimitBwd =  st_axis_status.bLimitBwd;
-  }
-  if (drvlocal.old_st_axis_status.bLimitFwd != st_axis_status.bLimitFwd) {
-    asynPrint(pC_->pasynUserController_, ASYN_TRACE_INFO,
-              "%spoll(%d) HLS=%d\n",
-              modNamEMC, axisNo_,!st_axis_status.bLimitFwd);
-    drvlocal.old_st_axis_status.bLimitFwd = st_axis_status.bLimitFwd;
-  }
-#endif
-
-#ifndef motorWaitPollsBeforeReadyString
-  if (drvlocal.waitNumPollsBeforeReady) {
-    /* Don't update moving, done, motorStatusProblem_ */
-    asynPrint(pC_->pasynUserController_, ASYN_TRACE_INFO,
-              "%spoll(%d) mvnNRdyNexAt=%d Ver=%d bBusy=%d bExecute=%d bEnabled=%d atTarget=%d waitNumPollsBeforeReady=%d\n",
-               modNamEMC,
-              axisNo_, st_axis_status.mvnNRdyNex,
-              drvlocal.supported.statusVer,
-              st_axis_status.bBusy, st_axis_status.bExecute,
-              st_axis_status.bEnabled, st_axis_status.atTarget,
-              drvlocal.waitNumPollsBeforeReady);
-    drvlocal.waitNumPollsBeforeReady--;
-    callParamCallbacks();
-  }
-  else
-#endif
-  {
-#if 0
-    if (drvlocal.old_st_axis_status.mvnNRdyNex != st_axis_status.mvnNRdyNex ||
-        drvlocal.old_st_axis_status.bBusy      != st_axis_status.bBusy ||
-        //drvlocal.old_st_axis_status.bEnabled   != st_axis_status.bEnabled ||
-        //drvlocal.old_st_axis_status.bExecute   != st_axis_status.bExecute ||
-        drvlocal.old_st_axis_status.atTarget   != st_axis_status.atTarget) {
-      asynPrint(pC_->pasynUserController_, ASYN_TRACE_INFO,
-                "%spoll(%d) mvnNRdyNexAt=%d bBusy=%d wf=%d ENC=%g fPosition=%g fActPosition=%g\n",
-                modNamEMC, axisNo_, st_axis_status.mvnNRdyNex,
-                st_axis_status.bBusy,
-                waitNumPollsBeforeReady_,
-                st_axis_status.encoderRaw, st_axis_status.fPosition,
-                st_axis_status.fActPosition);
-    }
-#endif
-  }
-  setIntegerParam(pC_->motorStatusDirection_, st_axis_status.motorStatusDirection);
-  setIntegerParam(pC_->motorStatusMoving_, st_axis_status.mvnNRdyNex);
-  setIntegerParam(pC_->motorStatusDone_, !st_axis_status.mvnNRdyNex);
-
-  drvlocal.MCU_nErrorId = st_axis_status.nErrorId;
-
-  if (drvlocal.cfgDebug_str) {
-    ; /* Do not do the following */
-  } else if (drvlocal.old_bError != st_axis_status.bError ||
-      drvlocal.old_MCU_nErrorId != drvlocal.MCU_nErrorId ||
-      drvlocal.dirty.sErrorMessage) {
-    char sErrorMessage[256];
-    int nErrorId = st_axis_status.nErrorId;
-    const char *errIdString = errStringFromErrId(nErrorId);
-    sErrorMessage[0] = '\0';
-    drvlocal.sErrorMessage[0] = '\0';
-    asynPrint(pC_->pasynUserController_, ASYN_TRACE_INFO,
-              "%spoll(%d) bError=%d st_axis_status.nErrorId=0x%x\n",
-               modNamEMC, axisNo_, st_axis_status.bError,
-              nErrorId);
-    drvlocal.old_bError = st_axis_status.bError;
-    drvlocal.old_MCU_nErrorId = nErrorId;
-    drvlocal.dirty.sErrorMessage = 0;
-    if (nErrorId) {
-      /* Get the ErrorMessage to have it in the log file */
-      (void)getStringFromAxis("sErrorMessage", (char *)&sErrorMessage[0],
-                              sizeof(sErrorMessage));
-      asynPrint(pC_->pasynUserController_, ASYN_TRACE_INFO,
-                "%ssErrorMessage(%d)=\"%s\"\n",
-                modNamEMC, axisNo_, sErrorMessage);
-    }
-    /* First choice: "well known" ErrorIds */
-    if (errIdString[0]) {
-      snprintf(drvlocal.sErrorMessage, sizeof(drvlocal.sErrorMessage)-1, "E: %s %x",
-               errIdString, nErrorId);
-    } else if ((pC_->features_ & FEATURE_BITS_ECMC) && nErrorId) {
-      /* emcmc has error messages */
-      snprintf(drvlocal.sErrorMessage, sizeof(drvlocal.sErrorMessage)-1, "E: %s",
-               sErrorMessage);
-    } else if (nErrorId) {
-      snprintf(drvlocal.sErrorMessage, sizeof(drvlocal.sErrorMessage)-1, "E: Cntrl Error %x", nErrorId);
-    }
-    /* The poller will update the MsgTxt field */
-    // updateMsgTxtFromDriver(drvlocal.sErrorMessage);
-  }
   callParamCallbacksUpdateError();
 
-  /*memcpy(&drvlocal.old_st_axis_status, &st_axis_status,
-    sizeof(drvlocal.old_st_axis_status)); */
-  return asynSuccess;
-
-  skip:
-  return asynError;
+  return status;
 }
 
 /** Set the motor closed loop status
   * \param[in] closedLoop true = close loop, false = open looop. */
 asynStatus EthercatMCGvlAxis::setClosedLoop(bool closedLoop)
 {
-  int value = closedLoop ? 1 : 0;
-  asynPrint(pC_->pasynUserController_, ASYN_TRACE_INFO,
-            "%ssetClosedLoop(%d)=%d\n",  modNamEMC, axisNo_, value);
-  if (drvlocal.axisFlags & AMPLIFIER_ON_FLAG_USING_CNEN) {
-    return enableAmplifier(value);
-  }
-  return asynSuccess;
+  asynStatus status = asynError;
+  return status;
 }
 
 asynStatus EthercatMCGvlAxis::setIntegerParam(int function, int value)
