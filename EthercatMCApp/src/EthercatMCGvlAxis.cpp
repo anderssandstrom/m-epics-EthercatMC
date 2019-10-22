@@ -23,6 +23,27 @@
 #define ASYN_TRACE_DEBUG     0x0080
 #endif
 
+typedef enum {
+  idxStatusCodeRESET    = 0,
+  idxStatusCodeIDLE     = 1,
+  idxStatusCodePOWEROFF = 2,
+  idxStatusCodeWARN     = 3,
+  idxStatusCodeERR4     = 4,
+  idxStatusCodeSTART    = 5,
+  idxStatusCodeBUSY     = 6,
+  idxStatusCodeSTOP     = 7,
+  idxStatusCodeERROR    = 8,
+  idxStatusCodeERR9     = 9,
+  idxStatusCodeERR10    = 10,
+  idxStatusCodeERR11    = 11,
+  idxStatusCodeERR12    = 12,
+  idxStatusCodeERR13    = 13,
+  idxStatusCodeERR14    = 14,
+  idxStatusCodeERR15    = 15
+} idxStatusCodeType;
+
+extern "C" const char *idxStatusCodeTypeToStr(idxStatusCodeType idxStatusCode);
+
 /* The maximum number of polls we wait for the motor
    to "start" (report moving after a new move command */
 #define WAITNUMPOLLSBEFOREREADY 3
@@ -409,6 +430,20 @@ void EthercatMCGvlAxis::callParamCallbacksUpdateError()
   callParamCallbacks();
 }
 
+asynStatus EthercatMCGvlAxis::setIntegerParamLog(int function,
+                                                 int newValue,
+                                                 const char *name)
+{
+  int oldValue;
+  asynStatus status = pC_->getIntegerParam(axisNo_, function, &oldValue);
+  if (status || (newValue != oldValue)) {
+    asynPrint(pC_->pasynUserController_, ASYN_TRACE_INFO,
+              "%spoll(%d) %s=%d\n",
+              modNamEMC, axisNo_, name, newValue);
+  }
+  return setIntegerParam(function, newValue);
+}
+
 
 asynStatus EthercatMCGvlAxis::pollAll(bool *moving, st_axis_status_type *pst_axis_status)
 {
@@ -424,9 +459,21 @@ asynStatus EthercatMCGvlAxis::pollAll(bool *moving, st_axis_status_type *pst_axi
  * \param[out] moving A flag that is set indicating that the axis is moving (true) or done (false). */
 asynStatus EthercatMCGvlAxis::poll(bool *moving)
 {
+  unsigned traceMask = ASYN_TRACE_INFO;
+  double targetPosition = 0.0;
+  double actPosition = 0.0;
+  int nvals = 0;
   asynStatus comStatus = asynError;
-  st_gvl_axis_status_type st_axis_status;
-  memset(&st_axis_status, 0, sizeof(st_axis_status));
+  uint32_t statusReasonAux;
+  idxStatusCodeType idxStatusCode;
+  uint16_t errorID = 0; //0xFFFF;
+  bool nowMoving = false;
+  int powerIsOn = 0;
+  int statusValid = 0;
+  int hasError = 0;
+  unsigned idxReasonBits = 0;
+  unsigned idxAuxBits = 0;
+
   snprintf(pC_->outString_, sizeof(pC_->outString_),
            "%sMAIN.aAxesState_EPICS[%d].AxisStatus.wStatusWord?",
            drvlocal.adsport_str, axisNo_);
@@ -438,11 +485,112 @@ asynStatus EthercatMCGvlAxis::poll(bool *moving)
               EthercatMCstrStatus(comStatus), (int)comStatus);
     return asynError;
   }
+  nvals = sscanf(pC_->inString_, "%u", &statusReasonAux);
+  if (nvals != 1) {
+    /* rubbish on the line */
+    asynPrint(pC_->pasynUserController_, ASYN_TRACE_ERROR|ASYN_TRACEIO_DRIVER,
+              "%spoll(%d) nvals=%d out=%s in=%s \n",
+              modNamEMC, axisNo_, nvals, pC_->outString_, pC_->inString_);
+    return asynError;
+  }
+  idxStatusCode = (idxStatusCodeType)(statusReasonAux >> 28);
+  idxReasonBits = (statusReasonAux >> 24) & 0x0F;
+  idxAuxBits    =  statusReasonAux  & 0x0FFFFFF;
 
-  //callParamCallbacksUpdateError();
 
-  memcpy(&drvlocal.old_st_axis_status, &st_axis_status,
-         sizeof(drvlocal.old_st_axis_status));
+
+  setIntegerParam(pC_->EthercatMCErrId_, errorID);
+  setDoubleParam(pC_->motorPosition_, actPosition);
+  drvlocal.hasProblem = 0;
+  setIntegerParam(pC_->EthercatMCStatusCode_, idxStatusCode);
+  if ((statusReasonAux != drvlocal.old_statusReasonAux) ||
+      (idxAuxBits      != drvlocal.old_idxAuxBits)) {
+    if (errorID) {
+      asynPrint(pC_->pasynUserController_, traceMask,
+                "%spoll(%d) actPos=%f targetPos=%f statusReasonAux=0x%x (%s) errorID=0x%x\n",
+                modNamEMC, axisNo_,
+                actPosition, targetPosition, statusReasonAux,
+                idxStatusCodeTypeToStr(idxStatusCode), errorID);
+    } else {
+      asynPrint(pC_->pasynUserController_, traceMask,
+                "%spoll(%d) actPos=%f targetPos=%f statusReasonAux=0x%x (%s)\n",
+                modNamEMC, axisNo_,
+                actPosition, targetPosition, statusReasonAux,
+                idxStatusCodeTypeToStr(idxStatusCode));
+    }
+    drvlocal.old_statusReasonAux = statusReasonAux;
+    drvlocal.old_idxAuxBits      = idxAuxBits;
+  }
+
+  switch (idxStatusCode) {
+    /* After RESET, START, STOP the bits are not valid */
+  case idxStatusCodeIDLE:
+  case idxStatusCodeWARN:
+    powerIsOn = 1;
+    statusValid = 1;
+    break;
+  case idxStatusCodePOWEROFF:
+    statusValid = 1;
+    drvlocal.hasProblem = 1;
+    powerIsOn = 0;
+    break;
+  case idxStatusCodeBUSY:
+    powerIsOn = 1;
+    statusValid = 1;
+    nowMoving = true;
+    break;
+  case idxStatusCodeERROR:
+    hasError = 1;
+    statusValid = 1;
+    drvlocal.hasProblem = 1;
+    break;
+  default:
+    drvlocal.hasProblem = 1;
+  }
+  if (statusValid) {
+    const char *msgTxtFromDriver = NULL;
+    int hls = idxReasonBits & 0x8 ? 1 : 0;
+    int lls = idxReasonBits & 0x4 ? 1 : 0;
+    setIntegerParamLog(pC_->motorStatusLowLimit_, lls,  "LLS");
+    setIntegerParamLog(pC_->motorStatusHighLimit_, hls, "HLS");
+    setIntegerParam(pC_->motorStatusMoving_, nowMoving);
+    setIntegerParam(pC_->motorStatusDone_, !nowMoving);
+    setIntegerParam(pC_->EthercatMCStatusBits_, statusReasonAux);
+    setIntegerParam(pC_->EthercatMCErr_, hasError);
+    if (drvlocal.auxBitsNotHomedMask) {
+      int homed = idxAuxBits & drvlocal.auxBitsNotHomedMask ? 0 : 1;
+      setIntegerParamLog(pC_->motorStatusHomed_, homed, "homed");
+      if (!homed) {
+        drvlocal.hasProblem = 1;
+      }
+    }
+    if (hasError) {
+      char sErrorMessage[40];
+      const char *errIdString = errStringFromErrId(errorID);
+      memset(&sErrorMessage[0], 0, sizeof(sErrorMessage));
+      if (errIdString[0]) {
+        snprintf(sErrorMessage, sizeof(sErrorMessage)-1, "E: %s %x",
+                 errIdString, errorID);
+      }  else {
+        snprintf(sErrorMessage, sizeof(sErrorMessage)-1,
+                 "E: TwinCAT Err %x", errorID);
+      }
+      msgTxtFromDriver = sErrorMessage;
+    }
+    updateMsgTxtFromDriver(msgTxtFromDriver);
+  }
+  *moving = nowMoving;
+  setIntegerParam(pC_->EthercatMCStatusCode_, idxStatusCode);
+  setIntegerParam(pC_->motorStatusProblem_, drvlocal.hasProblem);
+  setIntegerParam(pC_->motorStatusPowerOn_, powerIsOn);
+
+  drvlocal.old_statusReasonAux = statusReasonAux;
+  drvlocal.old_idxAuxBits      = idxAuxBits;
+#if 0
+  callParamCallbacksUpdateError();
+#else
+  callParamCallbacks();
+#endif
   return asynSuccess;
 }
 

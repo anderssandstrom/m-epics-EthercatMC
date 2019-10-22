@@ -9,10 +9,6 @@ extern "C" {
                               int axisFlags, const char *axisOptionsStr);
 };
 
-typedef struct {
-  unsigned  wStatusWord;
-} st_gvl_axis_status_type;
-
 class epicsShareClass EthercatMCGvlAxis : public asynMotorAxis
 {
 public:
@@ -27,6 +23,7 @@ public:
   asynStatus home(double min_velocity, double max_velocity, double acceleration, int forwards);
   asynStatus stop(double acceleration);
   void       callParamCallbacksUpdateError();
+  asynStatus setIntegerParamLog(int function, int newValue, const char *name);
   asynStatus pollAll(bool *moving);
   asynStatus pollAll(bool *moving, st_axis_status_type *pst_axis_status);
   asynStatus poll(bool *moving);
@@ -61,7 +58,8 @@ private:
 
   EthercatMCController *pC_;
   struct {
-    st_gvl_axis_status_type old_st_axis_status;
+    unsigned old_statusReasonAux;
+    unsigned old_idxAuxBits;
     double scaleFactor;
     double eres;
     const char *externalEncoderStr;
@@ -69,6 +67,7 @@ private:
     const char *cfgDebug_str;
     int axisFlags;
     int MCU_nErrorId;     /* nErrorID from MCU */
+    int hasProblem;
     int old_MCU_nErrorId; /* old nErrorID from MCU */
     int old_EPICS_nErrorId; /* old nErrorID from MCU */
 
@@ -77,6 +76,7 @@ private:
     unsigned int waitNumPollsBeforeReady;
 #endif
     int homed;
+    unsigned auxBitsNotHomedMask;
     eeAxisWarningType old_eeAxisWarning;
     eeAxisWarningType eeAxisWarning;
     eeAxisErrorType old_eeAxisError;
