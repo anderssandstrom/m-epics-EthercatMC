@@ -72,11 +72,14 @@ EthercatMCGvlAxis::EthercatMCGvlAxis(EthercatMCController *pC, int axisNo,
 #ifdef motorFlagsPwrWaitForOnString
   setIntegerParam(pC_->motorFlagsPwrWaitForOn_, 1);
 #endif
-  if (axisFlags & AMPLIFIER_ON_FLAG_WHEN_HOMING) {
+#if 0
 #ifdef POWERAUTOONOFFMODE2
+  if (axisFlags & AMPLIFIER_ON_FLAG_WHEN_HOMING) {
     setIntegerParam(pC_->motorPowerAutoOnOff_, POWERAUTOONOFFMODE2);
     setDoubleParam(pC_->motorPowerOnDelay_,   6.0);
     setDoubleParam(pC_->motorPowerOffDelay_, -1.0);
+  }
+#endif
 #endif
 #ifdef motorShowPowerOffString
     setIntegerParam(pC_->motorShowPowerOff_, 1);
@@ -85,11 +88,12 @@ EthercatMCGvlAxis::EthercatMCGvlAxis(EthercatMCController *pC, int axisNo,
     setIntegerParam(pC_->motorNotHomedProblem_, MOTORNOTHOMEDPROBLEM_ERROR);
 #endif
 
-  }
-  drvlocal.scaleFactor = 1.0;
+  //drvlocal.scaleFactor = 1.0;
+#if 0
   if (axisFlags & AMPLIFIER_ON_FLAG_USING_CNEN) {
     setIntegerParam(pC->motorStatusGainSupport_, 1);
   }
+#endif
   pC_->features_ |= FEATURE_BITS_GVL;
   if (axisOptionsStr && axisOptionsStr[0]) {
     const char * const encoder_is_str = "encoder=";
