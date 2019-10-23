@@ -23,7 +23,7 @@ epicsEnvSet("AXIS_NO",       "$(SM_AXIS_NO=1)")
 epicsEnvSet("DESC",          "$(SM_DESC=Axis1)")
 epicsEnvSet("AXISCONFIG",    "adsPort=$(ADSPORT)")
 
-< EthercatMCGvlAxis.iocsh
+< EthercatMCIndexerAxis.iocsh
 < EthercatMCAxisdebug.iocsh
 #< EthercatMCAxishome.iocsh
 
@@ -33,5 +33,5 @@ epicsEnvSet("AXIS_NO",       "$(SM_AXIS_NO=2)")
 epicsEnvSet("DESC",          "$(SM_DESC=Axis2)")
 epicsEnvSet("AXISCONFIG",    "adsPort=$(ADSPORT)")
 
-< EthercatMCGvlAxis.iocsh
+< EthercatMCIndexerAxis.iocsh
 < EthercatMCAxisdebug.iocsh
