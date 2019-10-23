@@ -112,6 +112,11 @@ EthercatMCIndexerAxis::EthercatMCIndexerAxis(EthercatMCController *pC,
 #ifdef motorShowPowerOffString
   setIntegerParam(pC_->motorShowPowerOff_, 1);
 #endif
+  setStringParam(pC_->EthercatMCreason27_, "High limit");
+  setStringParam(pC_->EthercatMCreason26_, "Low limit");
+  setStringParam(pC_->EthercatMCreason25_, "Dynamic problem, timeout");
+  setStringParam(pC_->EthercatMCreason24_, "Static problem, inhibit");
+
   /* Set the module name to "" if we have FILE/LINE enabled by asyn */
   if (pasynTrace->getTraceInfoMask(pC_->pasynUserController_) &
       ASYN_TRACEINFO_SOURCE) {
@@ -309,6 +314,17 @@ asynStatus EthercatMCIndexerAxis::move(double position, int relative,
     uintToNet(cmdReason, &posCmd.cmdReason, sizeof(posCmd.cmdReason));
     return pC_->setPlcMemoryViaADS(drvlocal.iOffset + drvlocal.lenInPlcPara,
                                    &posCmd, sizeof(posCmd));
+  } else if (drvlocal.adsPort) {
+    unsigned cmdReason = idxStatusCodeSTART  << (12 + 16);
+    snprintf(pC_->outString_, sizeof(pC_->outString_),
+             "%sGvl_App.axes_comm[%d].fTargetValue=%f;"
+             "%sGvl_App.axes_comm[%d].wStatusWord=%u",
+             drvlocal.adsport_str, axisNo_, position,
+             drvlocal.adsport_str, axisNo_, cmdReason);
+#ifndef motorWaitPollsBeforeReadyString
+    drvlocal.waitNumPollsBeforeReady += WAITNUMPOLLSBEFOREREADY;
+#endif
+    return pC_->writeReadACK(ASYN_TRACE_INFO);
   } else {
     asynPrint(pC_->pasynUserController_, ASYN_TRACE_INFO,
 	      "%smove(%d) iTypCode=0x%x\n",
@@ -417,6 +433,12 @@ asynStatus EthercatMCIndexerAxis::writeCmdRegisster(unsigned idxStatusCode)
     uintToNet(cmdReason, &posCmd.cmdReason, sizeof(posCmd.cmdReason));
     return pC_->setPlcMemoryViaADS(drvlocal.iOffset + (2 * drvlocal.lenInPlcPara),
                                    &posCmd, sizeof(posCmd));
+  } else if (drvlocal.adsPort) {
+    unsigned cmdReason = idxStatusCode << (12 + 16);
+    snprintf(pC_->outString_, sizeof(pC_->outString_),
+             "%sGvl_App.axes_comm[%d].wStatusWord=%u",
+             drvlocal.adsport_str, axisNo_, cmdReason);
+    return pC_->writeReadACK(ASYN_TRACE_INFO);
   } else {
     asynPrint(pC_->pasynUserController_, ASYN_TRACE_INFO,
 	      "%swriteCmdRegisster(%d) iTypCode=0x%x\n",
@@ -494,15 +516,6 @@ asynStatus EthercatMCIndexerAxis::poll(bool *moving)
                                                 drvlocal.iOffset,
                                                 drvlocal.lenInPlcPara);
       } else {
-#if 0
-        /* NON PILS */
-        uint32_t iTmpVer = 0xC0DEAFFE;
-        status = pC_->getPlcMemoryUint(0, &iTmpVer, sizeof(iTmpVer));
-        asynPrint(pC_->pasynUserController_, ASYN_TRACE_INFO,
-                  "%spoll(%d) iTmpVer=0x%x status=%s (%d)\n",
-                  modNamEMC, axisNo_, iTmpVer,
-                  EthercatMCstrStatus(status), (int)status);
-#else
         snprintf(pC_->outString_, sizeof(pC_->outString_),
                  "%sGvl_App.axes_comm[%d].wStatusWord?;"
                  "%sGvl_App.axes_comm[%d].fTargetValue?;"
@@ -511,7 +524,6 @@ asynStatus EthercatMCIndexerAxis::poll(bool *moving)
                  drvlocal.adsport_str, axisNo_,
                  drvlocal.adsport_str, axisNo_);
         status = pC_->writeReadOnErrorDisconnect();
-#endif
       }
       if (!status) {
         drvlocal.dirty.initialPollNeeded = 0;
@@ -619,6 +631,7 @@ asynStatus EthercatMCIndexerAxis::poll(bool *moving)
       idxReasonBits = (statusReasonAux >> 24) & 0x0F;
       idxAuxBits    =  statusReasonAux  & 0x0FFFFFF;
       paramCtrl = 0; /* We don't have paramCtrl implemented yet */
+      errorID = 0;   /* We don't have errorID implemented yet */
     } else {
       asynPrint(pC_->pasynUserController_, ASYN_TRACE_INFO,
                 "%spoll(%d) iTypCode=0x%x\n",
