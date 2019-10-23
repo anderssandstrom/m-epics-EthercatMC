@@ -452,9 +452,19 @@ asynStatus EthercatMCIndexerAxis::poll(bool *moving)
     unsigned idxAuxBits = 0;
     int pollReadBackInBackGround = 0;
     if (drvlocal.dirty.initialPollNeeded) {
-      status = pC_->indexerReadAxisParameters(this, drvlocal.devNum,
-                                              drvlocal.iOffset,
-                                              drvlocal.lenInPlcPara);
+      if (drvlocal.devNum) {
+        status = pC_->indexerReadAxisParameters(this, drvlocal.devNum,
+                                                drvlocal.iOffset,
+                                                drvlocal.lenInPlcPara);
+      } else {
+        /* NON PILS */
+        uint32_t iTmpVer = 0xC0DEAFFE;
+        status = pC_->getPlcMemoryUint(0, &iTmpVer, sizeof(iTmpVer));
+        asynPrint(pC_->pasynUserController_, ASYN_TRACE_INFO,
+                  "%spoll(%d) iTmpVer=0x%x status=%s (%d)\n",
+                  modNamEMC, axisNo_, iTmpVer,
+                  EthercatMCstrStatus(status), (int)status);
+      }
       if (!status) {
         drvlocal.dirty.initialPollNeeded = 0;
         setIntegerParam(pC_->motorStatusCommsError_, 0);
@@ -528,6 +538,38 @@ asynStatus EthercatMCIndexerAxis::poll(bool *moving)
       idxStatusCode = (idxStatusCodeType)(statusReasonAux >> 28);
       idxReasonBits = (statusReasonAux >> 24) & 0x0F;
       idxAuxBits    =  statusReasonAux  & 0x0FFFFFF;
+    } else if (pC_->features_ & FEATURE_BITS_GVL) {
+      int nvals = 0;
+      snprintf(pC_->outString_, sizeof(pC_->outString_),
+               "%sGvl_App.axes_comm[%d].wStatusWord?;"
+               "%sGvl_App.axes_comm[%d].fTargetValue?;"
+               "%sGvl_App.axes_comm[%d].fActualValue?",
+               drvlocal.adsport_str, axisNo_,
+               drvlocal.adsport_str, axisNo_,
+               drvlocal.adsport_str, axisNo_);
+      status = pC_->writeReadOnErrorDisconnect();
+      if (status) {
+        asynPrint(pC_->pasynUserController_,
+                  ASYN_TRACE_ERROR|ASYN_TRACEIO_DRIVER,
+                  "%sout=%s in=%s return=%s (%d)\n",
+                  modNamEMC, pC_->outString_, pC_->inString_,
+                  EthercatMCstrStatus(status), (int)status);
+        return asynError;
+      }
+      nvals = sscanf(pC_->inString_, "%u;%lf;%lf",
+                     &statusReasonAux, &targetPosition, &actPosition);
+      if (nvals != 3) {
+        /* rubbish on the line */
+        asynPrint(pC_->pasynUserController_,
+                  ASYN_TRACE_ERROR|ASYN_TRACEIO_DRIVER,
+                  "%spoll(%d) nvals=%d out=%s in=%s \n",
+                  modNamEMC, axisNo_, nvals, pC_->outString_, pC_->inString_);
+        return asynError;
+      }
+      idxStatusCode = (idxStatusCodeType)(statusReasonAux >> 28);
+      idxReasonBits = (statusReasonAux >> 24) & 0x0F;
+      idxAuxBits    =  statusReasonAux  & 0x0FFFFFF;
+      paramCtrl = 0; /* We don't have paramCtrl implemented yet */
     } else {
       asynPrint(pC_->pasynUserController_, ASYN_TRACE_INFO,
                 "%spoll(%d) iTypCode=0x%x\n",

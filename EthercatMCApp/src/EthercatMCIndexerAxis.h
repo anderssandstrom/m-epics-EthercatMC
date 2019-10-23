@@ -78,6 +78,7 @@ private:
     unsigned old_idxAuxBits;
     unsigned old_paramCtrl;
     unsigned int hasProblem :1;
+    char adsport_str[15]; /* "ADSPORT=12345/" */ /* 14 should be enough, */
   } drvlocal;
 
 #ifndef motorMessageTextString
