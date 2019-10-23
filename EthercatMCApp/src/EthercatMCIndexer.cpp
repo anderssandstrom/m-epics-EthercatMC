@@ -842,7 +842,7 @@ asynStatus EthercatMCController::initialPollIndexer(void)
         axisNo++;
         pAxis = static_cast<EthercatMCIndexerAxis*>(asynMotorController::getAxis(axisNo));
         if (!pAxis) {
-          pAxis = new EthercatMCIndexerAxis(this, axisNo);
+          pAxis = new EthercatMCIndexerAxis(this, axisNo, 0, NULL);
         }
         /* Now we have an axis */
 
