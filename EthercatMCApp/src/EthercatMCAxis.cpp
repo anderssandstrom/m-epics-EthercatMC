@@ -158,9 +158,9 @@ EthercatMCAxis::EthercatMCAxis(EthercatMCController *pC, int axisNo,
         drvlocal.scaleFactor = atof(pThisOption);
       } else if (!strncmp(pThisOption, sFeatures_str, strlen(sFeatures_str))) {
         pThisOption += strlen(sFeatures_str);
-        if (!strcmp(pThisOption, "Gvl")) {
-          pC_->features_ |= FEATURE_BITS_GVL;
-        }
+        //if (!strcmp(pThisOption, "Gvl")) {
+        //  pC_->features_ |= FEATURE_BITS_GVL;
+        //}
       }
       pThisOption = pNextOption;
     }

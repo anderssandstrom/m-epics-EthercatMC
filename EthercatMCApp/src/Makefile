@@ -20,7 +20,6 @@ EthercatMcSupport_SRCS += EthercatMCAxis.cpp
 EthercatMcSupport_SRCS += EthercatMCHelper.cpp
 EthercatMcSupport_SRCS += EthercatMCIndexer.cpp
 EthercatMcSupport_SRCS += EthercatMCIndexerAxis.cpp
-EthercatMcSupport_SRCS += EthercatMCGvlAxis.cpp
 
 
 EthercatMcSupport_LIBS += asyn
