@@ -262,8 +262,21 @@ void EthercatMCGvlAxis::report(FILE *fp, int level)
  */
 asynStatus EthercatMCGvlAxis::move(double position, int relative, double minVelocity, double maxVelocity, double acceleration)
 {
-  asynStatus status = asynError;
-  return status;
+  unsigned cmdReason = idxStatusCodeSTART  << 12;
+  if (relative){
+    double actPosition;
+    pC_->getDoubleParam(axisNo_, pC_->motorPosition_, &actPosition);
+    position = position - actPosition;
+  }
+  snprintf(pC_->outString_, sizeof(pC_->outString_),
+           "%sGvl_App.axes_comm[%d].fTargetValue=%f;"
+           "%sGvl_App.axes_comm[%d].wStatusWord=%u",
+           drvlocal.adsport_str, axisNo_, position,
+           drvlocal.adsport_str, axisNo_, cmdReason);
+#ifndef motorWaitPollsBeforeReadyString
+  drvlocal.waitNumPollsBeforeReady += WAITNUMPOLLSBEFOREREADY;
+#endif
+  return pC_->writeReadACK(ASYN_TRACE_INFO);
 }
 
 
