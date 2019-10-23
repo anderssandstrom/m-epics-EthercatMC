@@ -80,7 +80,9 @@ extern "C" const char *idxStatusCodeTypeToStr(idxStatusCodeType idxStatusCode)
  * Initializes register numbers, etc.
  */
 EthercatMCIndexerAxis::EthercatMCIndexerAxis(EthercatMCController *pC,
-                                             int axisNo)
+                                             int axisNo,
+                                             int axisFlags,
+                                             const char *axisOptionsStr)
   : asynMotorAxis(pC, axisNo),
     pC_(pC)
 {
@@ -115,6 +117,39 @@ EthercatMCIndexerAxis::EthercatMCIndexerAxis(EthercatMCController *pC,
       ASYN_TRACEINFO_SOURCE) {
     modNamEMC = "";
   }
+
+  if (axisOptionsStr && axisOptionsStr[0]) {
+    const char * const adsPort_str  = "adsPort=";
+
+    char *pOptions = strdup(axisOptionsStr);
+    char *pThisOption = pOptions;
+    char *pNextOption = pOptions;
+
+    while (pNextOption && pNextOption[0]) {
+      pNextOption = strchr(pNextOption, ';');
+      if (pNextOption) {
+        *pNextOption = '\0'; /* Terminate */
+        pNextOption++;       /* Jump to (possible) next */
+      }
+      asynPrint(pC_->pasynUserController_,
+                ASYN_TRACE_ERROR|ASYN_TRACEIO_DRIVER,
+                "%spThisOption=\"%s\"\n",
+                modNamEMC, pThisOption);
+
+      if (!strncmp(pThisOption, adsPort_str, strlen(adsPort_str))) {
+        pThisOption += strlen(adsPort_str);
+        int adsPort = atoi(pThisOption);
+        if (adsPort > 0) {
+          /* Save adsport_str for the poller */
+          snprintf(drvlocal.adsport_str, sizeof(drvlocal.adsport_str),
+                   "ADSPORT=%d/", adsPort);
+          drvlocal.adsPort = (unsigned)adsPort;
+        }
+      }
+      pThisOption = pNextOption;
+    }
+    free(pOptions);
+  }
 }
 
 extern "C" int EthercatMCCreateIndexerAxis(const char *EthercatMCName,
@@ -138,7 +173,7 @@ extern "C" int EthercatMCCreateIndexerAxis(const char *EthercatMCName,
      create one here to have the records showing "Communication Error" */
   pC->lock();
   if (!pC->getAxis(axisNo)) {
-    new EthercatMCIndexerAxis(pC, axisNo);
+    new EthercatMCIndexerAxis(pC, axisNo, axisFlags, axisOptionsStr);
   }
   pC->unlock();
   return asynSuccess;
@@ -351,11 +386,13 @@ asynStatus EthercatMCIndexerAxis::moveVelocity(double minVelocity,
  */
 asynStatus EthercatMCIndexerAxis::setPosition(double value)
 {
-  asynStatus status;
-  status = pC_->indexerParamWrite(drvlocal.paramIfOffset,
-                                  PARAM_IDX_FUN_SET_POSITION,
-                                  drvlocal.lenInPlcPara,
-                                  value);
+  asynStatus status = asynError;
+  if (drvlocal.paramIfOffset) {
+    status = pC_->indexerParamWrite(drvlocal.paramIfOffset,
+                                    PARAM_IDX_FUN_SET_POSITION,
+                                    drvlocal.lenInPlcPara,
+                                    value);
+  }
   return status;
 }
 
@@ -435,7 +472,7 @@ asynStatus EthercatMCIndexerAxis::setIntegerParamLog(int function,
 asynStatus EthercatMCIndexerAxis::poll(bool *moving)
 {
   asynStatus status = asynSuccess;
-  if (drvlocal.iTypCode && drvlocal.iOffset) {
+  if (drvlocal.iTypCode || drvlocal.adsPort) {
     unsigned traceMask = ASYN_TRACE_INFO;
     const char *msgTxtFromDriver = NULL;
     double targetPosition = 0.0;
@@ -452,11 +489,12 @@ asynStatus EthercatMCIndexerAxis::poll(bool *moving)
     unsigned idxAuxBits = 0;
     int pollReadBackInBackGround = 0;
     if (drvlocal.dirty.initialPollNeeded) {
-      if (drvlocal.devNum) {
+      if (drvlocal.iOffset) {
         status = pC_->indexerReadAxisParameters(this, drvlocal.devNum,
                                                 drvlocal.iOffset,
                                                 drvlocal.lenInPlcPara);
       } else {
+#if 0
         /* NON PILS */
         uint32_t iTmpVer = 0xC0DEAFFE;
         status = pC_->getPlcMemoryUint(0, &iTmpVer, sizeof(iTmpVer));
@@ -464,6 +502,16 @@ asynStatus EthercatMCIndexerAxis::poll(bool *moving)
                   "%spoll(%d) iTmpVer=0x%x status=%s (%d)\n",
                   modNamEMC, axisNo_, iTmpVer,
                   EthercatMCstrStatus(status), (int)status);
+#else
+        snprintf(pC_->outString_, sizeof(pC_->outString_),
+                 "%sGvl_App.axes_comm[%d].wStatusWord?;"
+                 "%sGvl_App.axes_comm[%d].fTargetValue?;"
+                 "%sGvl_App.axes_comm[%d].fActualValue?",
+                 drvlocal.adsport_str, axisNo_,
+                 drvlocal.adsport_str, axisNo_,
+                 drvlocal.adsport_str, axisNo_);
+        status = pC_->writeReadOnErrorDisconnect();
+#endif
       }
       if (!status) {
         drvlocal.dirty.initialPollNeeded = 0;
@@ -471,6 +519,7 @@ asynStatus EthercatMCIndexerAxis::poll(bool *moving)
       }
     }
     pC_->getIntegerParam(axisNo_, pC_->motorStatusPowerOn_, &powerIsOn);
+
     if ((drvlocal.iTypCode == 0x5008) || (drvlocal.iTypCode == 0x500c)) {
       struct {
         uint8_t   actPos[4];
@@ -538,7 +587,7 @@ asynStatus EthercatMCIndexerAxis::poll(bool *moving)
       idxStatusCode = (idxStatusCodeType)(statusReasonAux >> 28);
       idxReasonBits = (statusReasonAux >> 24) & 0x0F;
       idxAuxBits    =  statusReasonAux  & 0x0FFFFFF;
-    } else if (pC_->features_ & FEATURE_BITS_GVL) {
+    } else if (drvlocal.adsPort) {
       int nvals = 0;
       snprintf(pC_->outString_, sizeof(pC_->outString_),
                "%sGvl_App.axes_comm[%d].wStatusWord?;"
@@ -714,7 +763,7 @@ asynStatus EthercatMCIndexerAxis::resetAxis(void)
 asynStatus EthercatMCIndexerAxis::setClosedLoop(bool closedLoop)
 {
   double value = closedLoop ? 0.0 : 1.0; /* 1.0 means disable */
-  asynStatus status;
+  asynStatus status = asynError;
 
   asynPrint(pC_->pasynUserController_, ASYN_TRACE_INFO,
             "%ssetClosedLoop(%d)=%d\n",  modNamEMC, axisNo_,
@@ -723,11 +772,12 @@ asynStatus EthercatMCIndexerAxis::setClosedLoop(bool closedLoop)
     /* Report off before the poller detects off */
     setIntegerParam(pC_->motorStatusPowerOn_, value);
   }
-
-  status = pC_->indexerParamWrite(drvlocal.paramIfOffset,
-                                  PARAM_IDX_OPMODE_AUTO_UINT32,
-                                  drvlocal.lenInPlcPara,
-                                  value);
+  if (drvlocal.paramIfOffset) {
+    status = pC_->indexerParamWrite(drvlocal.paramIfOffset,
+                                    PARAM_IDX_OPMODE_AUTO_UINT32,
+                                    drvlocal.lenInPlcPara,
+                                    value);
+  }
   return status;
 }
 
