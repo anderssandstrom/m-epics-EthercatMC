@@ -111,6 +111,8 @@ EthercatMCAxis::EthercatMCAxis(EthercatMCController *pC, int axisNo,
     const char * const homProc_str = "HomProc=";
     const char * const homPos_str  = "HomPos=";
     const char * const adsPort_str  = "adsPort=";
+    const char * const powerOffDelay_str = "powerOffDelay=";
+    const char * const powerOnDelay_str = "powerOnDelay=";
     const char * const scaleFactor_str = "scaleFactor=";
 
     char *pOptions = strdup(axisOptionsStr);
@@ -155,6 +157,18 @@ EthercatMCAxis::EthercatMCAxis(EthercatMCController *pC, int axisNo,
       } else if (!strncmp(pThisOption, scaleFactor_str, strlen(scaleFactor_str))) {
         pThisOption += strlen(scaleFactor_str);
         drvlocal.scaleFactor = atof(pThisOption);
+      } else if (!strncmp(pThisOption, powerOffDelay_str, strlen(powerOffDelay_str))) {
+        double powerOffDelay;
+        pThisOption += strlen(powerOffDelay_str);
+        powerOffDelay = atof(pThisOption);
+        //setDoubleParam(pC_->motorPowerOffDelay_, powerOffDelay);
+        updateCfgValue(pC_->motorPowerOffDelay_, powerOffDelay, "powerOffDelay");
+      } else if (!strncmp(pThisOption, powerOnDelay_str, strlen(powerOnDelay_str))) {
+        double powerOnDelay;
+        pThisOption += strlen(powerOnDelay_str);
+        powerOnDelay = atof(pThisOption);
+        //setDoubleParam(pC_->motorPowerOnDelay_, powerOnDelay);               }
+        updateCfgValue(pC_->motorPowerOnDelay_, powerOnDelay, "powerOnDelay");
       }
       pThisOption = pNextOption;
     }
