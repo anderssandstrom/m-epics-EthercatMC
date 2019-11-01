@@ -66,7 +66,6 @@ EthercatMCAxis::EthercatMCAxis(EthercatMCController *pC, int axisNo,
   drvlocal.old_st_axis_status.bLimitFwd = -1;
 
   drvlocal.old_eeAxisError = eeAxisErrorIOCcomError;
-  drvlocal.axisFlags = axisFlags;
 
   /* We pretend to have an encoder (fActPosition) */
   setIntegerParam(pC_->motorStatusHasEncoder_, 1);
@@ -82,12 +81,6 @@ EthercatMCAxis::EthercatMCAxis(EthercatMCController *pC, int axisNo,
 #ifdef motorFlagsPwrWaitForOnString
   setIntegerParam(pC_->motorFlagsPwrWaitForOn_, 1);
 #endif
-  if (axisFlags & AMPLIFIER_ON_FLAG_AUTO_ON) {
-#ifdef POWERAUTOONOFFMODE2
-    setIntegerParam(pC_->motorPowerAutoOnOff_, POWERAUTOONOFFMODE2);
-    setDoubleParam(pC_->motorPowerOnDelay_,   6.0);
-    setDoubleParam(pC_->motorPowerOffDelay_, -1.0);
-#endif
 #ifdef motorShowPowerOffString
     setIntegerParam(pC_->motorShowPowerOff_, 1);
 #endif
@@ -95,11 +88,7 @@ EthercatMCAxis::EthercatMCAxis(EthercatMCController *pC, int axisNo,
     setIntegerParam(pC_->motorNotHomedProblem_, MOTORNOTHOMEDPROBLEM_ERROR);
 #endif
 
-  }
   drvlocal.scaleFactor = 1.0;
-  if (axisFlags & AMPLIFIER_ON_FLAG_USING_CNEN) {
-    setIntegerParam(pC->motorStatusGainSupport_, 1);
-  }
   if (axisOptionsStr && axisOptionsStr[0]) {
     const char * const encoder_is_str = "encoder=";
     const char * const cfgfile_str = "cfgFile=";
@@ -173,6 +162,17 @@ EthercatMCAxis::EthercatMCAxis(EthercatMCController *pC, int axisNo,
       pThisOption = pNextOption;
     }
     free(pOptions);
+  }
+  drvlocal.axisFlags = axisFlags;
+  if (axisFlags & AMPLIFIER_ON_FLAG_USING_CNEN) {
+    setIntegerParam(pC->motorStatusGainSupport_, 1);
+  }
+  if (axisFlags & AMPLIFIER_ON_FLAG_AUTO_ON) {
+#ifdef POWERAUTOONOFFMODE2
+    setIntegerParam(pC_->motorPowerAutoOnOff_, POWERAUTOONOFFMODE2);
+    setDoubleParam(pC_->motorPowerOnDelay_,   6.0);
+    setDoubleParam(pC_->motorPowerOffDelay_, -1.0);
+#endif
   }
   /* Set the module name to "" if we have FILE/LINE enabled by asyn */
   if (pasynTrace->getTraceInfoMask(pC_->pasynUserController_) & ASYN_TRACEINFO_SOURCE) modNamEMC = "";
