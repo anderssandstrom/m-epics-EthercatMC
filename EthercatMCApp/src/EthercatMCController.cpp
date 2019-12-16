@@ -126,7 +126,7 @@ EthercatMCController::EthercatMCController(const char *portName,
                          0, 0)  // Default priority and stack size
 {
   asynStatus status;
-  mcuPortName_ = strdup(portName);
+  mcuPortName_ = strdup(MotorPortName);
   /* Controller */
   memset(&ctrlLocal, 0, sizeof(ctrlLocal));
   ctrlLocal.oldStatus = asynDisconnected;  

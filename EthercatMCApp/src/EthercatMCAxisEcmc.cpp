@@ -191,6 +191,31 @@ EthercatMCAxisEcmc::EthercatMCAxisEcmc(EthercatMCController *pC, int axisNo,
   }
   /* Set the module name to "" if we have FILE/LINE enabled by asyn */
   if (pasynTrace->getTraceInfoMask(pC_->pasynUserController_) & ASYN_TRACEINFO_SOURCE) modNamEMC = "";
+
+  //test on parameter
+  //asynStatus status = pasynInt32SyncIO->connect(pC_->mcuPortName_, 0, &asynUserTestInt32_, "T_SMP_MS=10/TYPE=asynInt32/ecmc.thread.latency.max?"); // Not working?
+  //asynStatus status = pasynInt32SyncIO->connect(pC_->mcuPortName_, 0, &asynUserTestInt32_, "T_SMP_MS=10/TYPE=asynFloat64/ax1.poserr?"); //working
+  asynStatus status = pasynInt32SyncIO->connect(pC_->mcuPortName_, 0, &asynUserTestInt32_, "T_SMP_MS=10/TYPE=asynInt32/ax1.status?");  //working..
+  if (status) {
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "???????????????????????????????TEST FAILED on port %s\n",pC_->mcuPortName_);
+  }
+  else{
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "TEST SUCCESS!!!!!!!!!!!!! %s\n",pC_->mcuPortName_);
+  }
+  int32_t hepp=0;
+  status = pasynInt32SyncIO->read(asynUserTestInt32_,&hepp,2);  //working..
+  if (status) {
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "???????????????????????????????TEST FAILED read %s\n",pC_->mcuPortName_);
+  }
+  else{
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "TEST SUCCESS READ!!!!!!!!!!!!! %s, value= %d\n",pC_->mcuPortName_,hepp);
+  }
+
+
   initialPoll();
 }
 

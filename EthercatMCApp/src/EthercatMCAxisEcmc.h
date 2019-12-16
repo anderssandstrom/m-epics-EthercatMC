@@ -7,6 +7,7 @@ FILENAME...   EthercatMCAxis.h
 
 #include "asynMotorAxis.h"
 #include <stdint.h>
+#include <asynInt32SyncIO.h>
 
 #define AMPLIFIER_ON_FLAG_CREATE_AXIS  (1)
 #define AMPLIFIER_ON_FLAG_AUTO_ON      (1<<1)
@@ -234,7 +235,9 @@ private:
   void updateMsgTxtFromDriver(const char *value);
 #endif
 
+   asynUser *asynUserTestInt32_;
   //asynInt32Client ecmcStatusWordClient_;
+
   friend class EthercatMCController;
 };
 
