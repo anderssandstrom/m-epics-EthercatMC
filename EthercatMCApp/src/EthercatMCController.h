@@ -7,8 +7,8 @@ FILENAME...   EthercatMCController.h
 
 #include "asynMotorController.h"
 #include "asynMotorAxis.h"
-#include "EthercatMCAxis.h"
-#include "EthercatMCADSdefs.h"
+#include "EthercatMCAxisEcmc.h"
+
 
 #ifndef motorRecResolutionString
 #define CREATE_MOTOR_REC_RESOLUTION
@@ -81,13 +81,9 @@ extern "C" {
   double     netToDouble(const void *data, size_t lenInPlc);
   void       doubleToNet(const double value, void *data, size_t lenInPlc);
   void       uintToNet(const unsigned value, void *data, size_t lenInPlc);
-  int EthercatMCCreateAxis(const char *EthercatMCName, int axisNo,
+  int EthercatMCCreateAxisEcmc(const char *EthercatMCName, int axisNo,
                            int axisFlags, const char *axisOptionsStr);
 
-  asynStatus EthercatMCADSgetPlcMemoryUint(asynUser *pasynUser,
-                                           unsigned indexOffset,
-                                           unsigned *value,
-                                           size_t lenInPlc);
   asynStatus disconnect_C(asynUser *pasynUser);
   asynStatus writeReadOnErrorDisconnect_C(asynUser *pasynUser,
                                           const char *outdata, size_t outlen,
@@ -101,8 +97,6 @@ extern "C" {
 #define NETTODOUBLE(n)     netToDouble((const void*)&n, sizeof(n))
 #define UINTTONET(val,n)   uintToNet((val), (&n), sizeof(n))
 #define DOUBLETONET(val,n) doubleToNet((val), (&n), sizeof(n))
-
-class EthercatMCIndexerAxis;
 
 class epicsShareClass EthercatMCController : public asynMotorController {
 public:
@@ -138,6 +132,7 @@ public:
 #define FEATURE_BITS_ADS              (1<<4)
 #define FEATURE_BITS_ECMC             (1<<5)
 #define FEATURE_BITS_SIM              (1<<6)
+#define FEATURE_BITS_GVL              (1<<7)
 
   EthercatMCController(const char *portName, const char *EthercatMCPortName,
                        int numAxes, double movingPollPeriod,
@@ -148,8 +143,8 @@ public:
   asynStatus setMCUErrMsg(const char *value);
   asynStatus configController(int needOk, const char *value);
   asynStatus writeReadOnErrorDisconnect(void);
-  EthercatMCAxis* getAxis(asynUser *pasynUser);
-  EthercatMCAxis* getAxis(int axisNo);
+  EthercatMCAxisEcmc* getAxis(asynUser *pasynUser);
+  EthercatMCAxisEcmc* getAxis(int axisNo);
   int features_;
 
   protected:
@@ -163,76 +158,19 @@ public:
                                               char *indata, size_t inlen,
                                               size_t *pnread);
 
-  /* memory bytes via ADS */
-  asynStatus writeWriteReadAds(asynUser *pasynUser,
-                               AmsHdrType *amsHdr_p, size_t outlen,
-                               uint32_t invokeID,
-                               uint32_t ads_cmdID,
-                               void *indata, size_t inlen,
-                               size_t *pnread);
-  asynStatus getPlcMemoryViaADS(unsigned indexOffset,
-                                void *data, size_t lenInPlc);
-  asynStatus setPlcMemoryViaADS(unsigned indexOffset,
-                                const void *data, size_t lenInPlc);
-  asynStatus getSymbolInfoViaADS(const char *symbolName,
-                                 void *data,
-                                 size_t lenInPlc);
-
-  /* Indexer */
-  asynStatus readDeviceIndexer(unsigned devNum, unsigned infoType);
-  void parameterFloatReadBack(unsigned axisNo,
-                              unsigned paramIndex,
-                              double fValue);
-  asynStatus indexerReadAxisParameters(EthercatMCIndexerAxis *pAxis,
-                                       unsigned devNum,
-                                       unsigned iOffset,
-                                       unsigned lenInPlcPara);
-  asynStatus poll(void);
-  asynStatus newIndexerAxis(EthercatMCIndexerAxis *pAxis,
-                            unsigned devNum,
-                            unsigned iAllFlags,
-                            double   fAbsMin,
-                            double   fAbsMax,
-                            unsigned iOffset);
-  int getFeatures(void);
-  asynStatus initialPollIndexer(void);
   asynStatus writeReadControllerPrint(int traceMask);
   asynStatus writeReadACK(int traceMask);
-  asynStatus getPlcMemoryUint(unsigned indexOffset,
-                              unsigned *value, size_t lenInPlc);
-  asynStatus setPlcMemoryBytes(unsigned indexOffset,
-                               const char *value, size_t len);
-  asynStatus getPlcMemoryBytes(unsigned indexOffset,
-                               char *value, size_t len);
-  asynStatus setPlcMemoryInteger(unsigned indexOffset,
-                                 int value, size_t lenInPlc);
-  asynStatus getPlcMemoryDouble(unsigned indexOffset,
-                                double *value, size_t lenInPlc);
-  asynStatus setPlcMemoryDouble(unsigned indexOffset,
-                                double value, size_t lenInPlc);
+  int getFeatures(void);
+  asynStatus poll();
 
-  asynStatus indexerParamWaitNotBusy(unsigned indexOffset);
-  asynStatus indexerParamRead(int axisNo,
-                              unsigned paramIfOffset,
-                              unsigned paramIndex,
-                              unsigned lenInPlcPara,
-                              double *value);
-  asynStatus indexerParamWrite(unsigned paramIfOffset,
-                               unsigned paramIndex,
-                               unsigned lenInPlcPara,
-                               double value);
-
-  struct {
+    struct {
     asynStatus   oldStatus;
-    unsigned int cntADSstatus;
     unsigned int local_no_ASYN_;
     unsigned int hasConfigError;
     unsigned int initialPollDone;
     unsigned int indexerOffset;
     unsigned int specialDbgStrToMcuDeviceLength;
     unsigned int specialDbgStrToMcuDeviceOffset;
-    AmsNetidAndPortType remote;
-    AmsNetidAndPortType local;
     unsigned adsport;
     int useADSbinary;
     struct {
@@ -243,7 +181,6 @@ public:
       unsigned int bADS             :1;
     } supported;
   } ctrlLocal;
-
 
   /* First parameter */
   int EthercatMCErr_;
@@ -309,12 +246,12 @@ public:
   int EthercatMCErrId_;
   /* Last parameter */
 
+   char *mcuPortName_;
+
   #define FIRST_VIRTUAL_PARAM EthercatMCErr_
   #define LAST_VIRTUAL_PARAM EthercatMCErrId_
   #define NUM_VIRTUAL_MOTOR_PARAMS ((int) (&LAST_VIRTUAL_PARAM - &FIRST_VIRTUAL_PARAM + 1))
-
-  friend class EthercatMCAxis;
-  friend class EthercatMCIndexerAxis;
+  friend class EthercatMCAxisEcmc;  
 };
 
 #endif

@@ -6,6 +6,7 @@ FILENAME...   EthercatMCAxis.h
 #define ETHERCATMCAXIS_H
 
 #include "asynMotorAxis.h"
+#include <stdint.h>
 
 #define AMPLIFIER_ON_FLAG_CREATE_AXIS  (1)
 #define AMPLIFIER_ON_FLAG_AUTO_ON      (1<<1)
@@ -57,11 +58,11 @@ typedef struct {
   int motorDiffPostion;     /* Not in struct. Calculated in poll() */
 } st_axis_status_type;
 
-class epicsShareClass EthercatMCAxis : public asynMotorAxis
+class epicsShareClass EthercatMCAxisEcmc : public asynMotorAxis
 {
 public:
   /* These are the methods we override from the base class */
-  EthercatMCAxis(class EthercatMCController *pC, int axisNo,
+  EthercatMCAxisEcmc(class EthercatMCController *pC, int axisNo,
             int axisFlags, const char *axisOptionsStr);
   void report(FILE *fp, int level);
   asynStatus mov2(double posEGU, int nCommand, double maxVeloEGU, double accEGU);
@@ -233,6 +234,7 @@ private:
   void updateMsgTxtFromDriver(const char *value);
 #endif
 
+  //asynInt32Client ecmcStatusWordClient_;
   friend class EthercatMCController;
 };
 
