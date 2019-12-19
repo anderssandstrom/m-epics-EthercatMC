@@ -139,6 +139,7 @@ public:
                        double idlePollPeriod,
                        const char *optionStr);
 
+  ~EthercatMCController();
   void report(FILE *fp, int level);
   asynStatus setMCUErrMsg(const char *value);
   asynStatus configController(int needOk, const char *value);
@@ -246,7 +247,11 @@ public:
   int EthercatMCErrId_;
   /* Last parameter */
 
-   char *mcuPortName_;
+  // ECMC
+  char  *mcuPortName_;
+  double movingPollPeriod_;
+  double idlePollPeriod_;
+  // ECMC
 
   #define FIRST_VIRTUAL_PARAM EthercatMCErr_
   #define LAST_VIRTUAL_PARAM EthercatMCErrId_

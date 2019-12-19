@@ -46,6 +46,21 @@ EthercatMCAxisEcmc::EthercatMCAxisEcmc(EthercatMCController *pC, int axisNo,
   : asynMotorAxis(pC, axisNo),
     pC_(pC)
 {
+  // ECMC  
+  asynUserStatWd_     = NULL; // "T_SMP_MS=%d/TYPE=asynInt32/ax%d.status?"
+  asynUserDiagStr_    = NULL; // "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnostic?"  
+  asynUserCntrlWd_    = NULL; // "T_SMP_MS=%d/TYPE=asynInt32/ax%d.control="
+  asynUserTargPos_    = NULL; // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetpos="
+  asynUserTargVel_    = NULL; // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetvel="
+  asynUserTargAcc_    = NULL; // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetacc="
+  asynUserSoftLimBwd_ = NULL; // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.soflimbwd="
+  asynUserSoftLimFwd_ = NULL; // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.soflimfwd="
+
+  memset(&diagData_,0, sizeof(diagData_));
+  memset(&diagStringBuffer_[0],0,sizeof(diagStringBuffer_));
+  axisId_ = axisNo;
+  //ECMC
+  
   int powerAutoOnOff = -1; /* undefined */
   /* Some parameters are only defined in the ESS fork of the motor module.
      So they have the ifdef */
@@ -192,30 +207,12 @@ EthercatMCAxisEcmc::EthercatMCAxisEcmc(EthercatMCController *pC, int axisNo,
   /* Set the module name to "" if we have FILE/LINE enabled by asyn */
   if (pasynTrace->getTraceInfoMask(pC_->pasynUserController_) & ASYN_TRACEINFO_SOURCE) modNamEMC = "";
 
-  //test on parameter
-  //asynStatus status = pasynInt32SyncIO->connect(pC_->mcuPortName_, 0, &asynUserTestInt32_, "T_SMP_MS=10/TYPE=asynInt32/ecmc.thread.latency.max?"); // Not working?
-  //asynStatus status = pasynInt32SyncIO->connect(pC_->mcuPortName_, 0, &asynUserTestInt32_, "T_SMP_MS=10/TYPE=asynFloat64/ax1.poserr?"); //working
-  asynStatus status = pasynInt32SyncIO->connect(pC_->mcuPortName_, 0, &asynUserTestInt32_, "T_SMP_MS=10/TYPE=asynInt32/ax1.status?");  //working..
-  if (status) {
+  asynStatus status = connectEcmcAxis();
+  if (status!=asynSuccess) {
     asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
-              "???????????????????????????????TEST FAILED on port %s\n",pC_->mcuPortName_);
+              "connectEcmcAxis() failed on port %s\n",pC_->mcuPortName_);
   }
-  else{
-    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
-              "TEST SUCCESS!!!!!!!!!!!!! %s\n",pC_->mcuPortName_);
-  }
-  int32_t hepp=0;
-  status = pasynInt32SyncIO->read(asynUserTestInt32_,&hepp,2);  //working..
-  if (status) {
-    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
-              "???????????????????????????????TEST FAILED read %s\n",pC_->mcuPortName_);
-  }
-  else{
-    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
-              "TEST SUCCESS READ!!!!!!!!!!!!! %s, value= %d\n",pC_->mcuPortName_,hepp);
-  }
-
-
+  
   initialPoll();
 }
 
@@ -318,6 +315,9 @@ asynStatus EthercatMCAxisEcmc::readBackSoftLimits(void)
             enabledHigh, fValueHigh, enabledLow, fValueLow);
   /* EthercatMCCHLMXX are info(asyn:READBACK,"1"),
      so we must use pC_->setXXX(axisNo_..)  here */
+
+
+
   pC_->setIntegerParam(axisNo_, pC_->EthercatMCCfgDHLM_En_, enabledHigh);
   pC_->setDoubleParam(axisNo_, pC_->EthercatMCCfgDHLM_, fValueHigh);
   pC_->setIntegerParam(axisNo_, pC_->EthercatMCCfgDLLM_En_, enabledLow);
@@ -1270,6 +1270,10 @@ pollAllWrongnvals:
  * \param[out] moving A flag that is set indicating that the axis is moving (true) or done (false). */
 asynStatus EthercatMCAxisEcmc::poll(bool *moving)
 {
+
+  // ECMC
+  readAllStatus();
+  // ECMC
   asynStatus comStatus = asynSuccess;
   st_axis_status_type st_axis_status;
   double timeBefore = EthercatMCgetNowTimeSecs();
@@ -2326,4 +2330,385 @@ asynStatus EthercatMCAxisEcmc::setValueOnAxis(const char* var, int value)
            pC_->features_ & FEATURE_BITS_GVL ? "%sGvl.axes[%d].%s=%d" : "%sMain.M%d.%s=%d",
            drvlocal.adsport_str, axisNo_, var, value);
   return pC_->writeReadACK(ASYN_TRACE_INFO);
+}
+
+asynStatus EthercatMCAxisEcmc::connectEcmcAxis() {
+
+  char buffer[ECMC_MAX_ASYN_DRVINFO_STR_LEN];
+  int movingPollPeriodMs = (int)(pC_->movingPollPeriod_*1000);
+  char *name = &buffer[0];
+  unsigned int charCount = 0;
+  asynStatus status;
+
+  // Status Word
+  charCount = snprintf(name,
+                       sizeof(buffer),
+                       ECMC_ASYN_AXIS_STAT_STRING,
+                       movingPollPeriodMs,
+                       axisId_);
+  if (charCount >= sizeof(buffer) - 1) {    
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "%s/%s:%d: ERROR (axis %d): Failed to generate drvInfo for %s on asynport %s.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      axisId_,
+      ECMC_ASYN_AXIS_STAT_STRING,
+      pC_->mcuPortName_);
+    return asynError;
+  }
+
+  status = pasynInt32SyncIO->connect(pC_->mcuPortName_, 0, &asynUserStatWd_, name);
+  if (status!=asynSuccess) {
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "%s/%s:%d: ERROR (axis %d): Failed to connect drvInfo to ECMC for parameter %s.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      axisId_,
+      name);
+  }
+  
+  // Control Word
+  charCount = snprintf(name,
+                       sizeof(buffer),
+                       ECMC_ASYN_AXIS_CONT_STRING,
+                       movingPollPeriodMs,
+                       axisId_);
+  if (charCount >= sizeof(buffer) - 1) {    
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "%s/%s:%d: ERROR (axis %d): Failed to generate drvInfo for %s on asynport %s.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      axisId_,
+      ECMC_ASYN_AXIS_CONT_STRING,
+      pC_->mcuPortName_);
+    return asynError;
+  }
+
+  status = pasynInt32SyncIO->connect(pC_->mcuPortName_, 0, &asynUserCntrlWd_, name);
+  if (status!=asynSuccess) {
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "%s/%s:%d: ERROR (axis %d): Failed to connect drvInfo to ECMC for parameter %s.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      axisId_,
+      name);
+  }
+  
+  // Diag string
+  charCount = snprintf(name,
+                       sizeof(buffer),
+                       ECMC_ASYN_AXIS_DIAG_STRING,
+                       movingPollPeriodMs,
+                       axisId_);
+  if (charCount >= sizeof(buffer) - 1) {    
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "%s/%s:%d: ERROR (axis %d): Failed to generate drvInfo for %s on asynport %s.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      axisId_,
+      ECMC_ASYN_AXIS_DIAG_STRING,
+      pC_->mcuPortName_);
+    return asynError;
+  }
+           
+  status = pasynInt8ArraySyncIO->connect(pC_->mcuPortName_, 0, &asynUserDiagStr_, name);
+  if (status!=asynSuccess) {
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "%s/%s:%d: ERROR (axis %d): Failed to connect drvInfo to ECMC for parameter %s.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      axisId_,
+      name);
+  }
+
+  // Target position
+  charCount = snprintf(name,
+                       sizeof(buffer),
+                       ECMC_ASYN_AXIS_TARG_POS_STRING,
+                       movingPollPeriodMs,
+                       axisId_);
+  if (charCount >= sizeof(buffer) - 1) {    
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "%s/%s:%d: ERROR (axis %d): Failed to generate drvInfo for %s on asynport %s.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      axisId_,
+      ECMC_ASYN_AXIS_TARG_POS_STRING,
+      pC_->mcuPortName_);
+    return asynError;
+  }
+
+  status = pasynFloat64SyncIO->connect(pC_->mcuPortName_, 0, &asynUserTargPos_, name);
+  if (status!=asynSuccess) {
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "%s/%s:%d: ERROR (axis %d): Failed to connect drvInfo to ECMC for parameter %s.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      axisId_,
+      name);
+  }
+
+  // Target velo
+  charCount = snprintf(name,
+                       sizeof(buffer),
+                       ECMC_ASYN_AXIS_TARG_VEL_STRING,
+                       movingPollPeriodMs,
+                       axisId_);
+  if (charCount >= sizeof(buffer) - 1) {    
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "%s/%s:%d: ERROR (axis %d): Failed to generate drvInfo for %s on asynport %s.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      axisId_,
+      ECMC_ASYN_AXIS_TARG_VEL_STRING,
+      pC_->mcuPortName_);
+    return asynError;
+  }
+
+  status = pasynFloat64SyncIO->connect(pC_->mcuPortName_, 0, &asynUserTargVel_, name);
+  if (status!=asynSuccess) {
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "%s/%s:%d: ERROR (axis %d): Failed to connect drvInfo to ECMC for parameter %s.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      axisId_,
+      name);
+  }
+
+  // Target acc
+  charCount = snprintf(name,
+                       sizeof(buffer),
+                       ECMC_ASYN_AXIS_TARG_ACC_STRING,
+                       movingPollPeriodMs,
+                       axisId_);
+  if (charCount >= sizeof(buffer) - 1) {    
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "%s/%s:%d: ERROR (axis %d): Failed to generate drvInfo for %s on asynport %s.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      axisId_,
+      ECMC_ASYN_AXIS_TARG_ACC_STRING,
+      pC_->mcuPortName_);
+    return asynError;
+  }
+
+  status = pasynFloat64SyncIO->connect(pC_->mcuPortName_, 0, &asynUserTargAcc_, name);
+  if (status!=asynSuccess) {
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "%s/%s:%d: ERROR (axis %d): Failed to connect drvInfo to ECMC for parameter %s.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      axisId_,
+      name);
+  }
+
+  // Soft limit bwd
+  charCount = snprintf(name,
+                       sizeof(buffer),
+                       ECMC_ASYN_AXIS_SOFT_LIM_BWD_STRING,
+                       movingPollPeriodMs,
+                       axisId_);
+  if (charCount >= sizeof(buffer) - 1) {    
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "%s/%s:%d: ERROR (axis %d): Failed to generate drvInfo for %s on asynport %s.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      axisId_,
+      ECMC_ASYN_AXIS_SOFT_LIM_BWD_STRING,
+      pC_->mcuPortName_);
+    return asynError;
+  }
+
+  status = pasynFloat64SyncIO->connect(pC_->mcuPortName_, 0, &asynUserSoftLimBwd_, name);
+  if (status!=asynSuccess) {
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "%s/%s:%d: ERROR (axis %d): Failed to connect drvInfo to ECMC for parameter %s.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      axisId_,
+      name);
+  }
+
+  // Soft limit fwd
+  charCount = snprintf(name,
+                       sizeof(buffer),
+                       ECMC_ASYN_AXIS_SOFT_LIM_FWD_STRING,
+                       movingPollPeriodMs,
+                       axisId_);
+  if (charCount >= sizeof(buffer) - 1) {    
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "%s/%s:%d: ERROR (axis %d): Failed to generate drvInfo for %s on asynport %s.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      axisId_,
+      ECMC_ASYN_AXIS_SOFT_LIM_FWD_STRING,
+      pC_->mcuPortName_);
+    return asynError;
+  }
+
+  status = pasynFloat64SyncIO->connect(pC_->mcuPortName_, 0, &asynUserSoftLimFwd_, name);
+  if (status!=asynSuccess) {
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "%s/%s:%d: ERROR (axis %d): Failed to connect drvInfo to ECMC for parameter %s.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      axisId_,
+      name);
+  }
+
+  readAllStatus();
+  return asynSuccess;
+}
+
+asynStatus EthercatMCAxisEcmc::readStatusWd() {
+  
+  ecmcAxisStatusWordType statusWdTemp;
+  asynStatus status = pasynInt32SyncIO->read(asynUserStatWd_,(epicsInt32*)&statusWdTemp,DEFAULT_CONTROLLER_TIMEOUT);
+  if (status!=asynSuccess) {
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "%s/%s:%d: ERROR (axis %d): Failed to read status word from ecmc.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      axisId_);
+    return asynError;
+  }
+  statusWd_ = statusWdTemp;
+  return asynSuccess;
+}
+
+asynStatus EthercatMCAxisEcmc::readDiagStr() {
+  
+  size_t inBytes = 0;
+  asynStatus status = pasynInt8ArraySyncIO->read(asynUserDiagStr_,
+                                            (epicsInt8*)diagStringBuffer_,
+                                            ECMC_MAX_ASYN_DIAG_STR_LEN,
+                                            &inBytes,
+                                            DEFAULT_CONTROLLER_TIMEOUT);  
+  if(status==asynSuccess) printf("asynSuccess: len= %lu, :%s\n ",strlen(diagStringBuffer_),diagStringBuffer_);
+  else printf("asynError\n");
+  if (status!=asynSuccess) {
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "%s/%s:%d: ERROR (axis %d): Failed to read diag string from ecmc.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      axisId_);
+    return asynError;
+  }
+
+  //diagStringBuffer_[inBytes]='\0';
+  ecmcDiagStringData  diagDataTemp;
+  int nvals = 0;  
+
+  nvals = sscanf(diagStringBuffer_,
+                 "%d,%lf,%lf,%lf,%lf,%lf,%d,%lf,%lf,%lf,%lf," // 11
+                 "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d", //19
+                  &diagDataTemp.axId,            // 1
+                  &diagDataTemp.setpos,          // 2
+                  &diagDataTemp.actpos,          // 3
+                  &diagDataTemp.poserr,          // 4
+                  &diagDataTemp.targpos,         // 5
+                  &diagDataTemp.targposerr,      // 6
+                  &diagDataTemp.rawpos,          // 7
+                  &diagDataTemp.cntrlout,        // 8
+                  &diagDataTemp.setvel,          // 9
+                  &diagDataTemp.actvel,          // 10
+                  &diagDataTemp.rawvelff,        // 11
+                  &diagDataTemp.rawvel,          // 12
+                  &diagDataTemp.cyclecnt,        // 13
+                  &diagDataTemp.error,           // 14
+                  &diagDataTemp.cmd,             // 15
+                  &diagDataTemp.cmddata,         // 16
+                  &diagDataTemp.seqstate,        // 17
+                  &diagDataTemp.ilock,           // 18
+                  &diagDataTemp.ilocklastactive, // 19
+                  &diagDataTemp.trajsource,      // 20
+                  &diagDataTemp.encsource,       // 21
+                  &diagDataTemp.enable,          // 22
+                  &diagDataTemp.enabled,         // 23
+                  &diagDataTemp.execute,         // 24
+                  &diagDataTemp.busy,            // 25
+                  &diagDataTemp.attarget,        // 26
+                  &diagDataTemp.homed,           // 27
+                  &diagDataTemp.lowlim,          // 28
+                  &diagDataTemp.highlim,         // 29
+                  &diagDataTemp.homesensor);     // 30
+
+  if (nvals == 30) {
+    memcpy(&diagData_,&diagDataTemp,sizeof(ecmcDiagStringData));
+    printf("SUCCESS SCANF %d\n",diagDataTemp.cyclecnt);
+  }
+  return asynSuccess;
+}
+
+asynStatus EthercatMCAxisEcmc::readControlWd(ecmcAxisControlWordType *controlWd) {
+  
+  ecmcAxisControlWordType controlWdTemp;
+  asynStatus status = pasynInt32SyncIO->read(asynUserCntrlWd_,(epicsInt32*)&controlWdTemp,DEFAULT_CONTROLLER_TIMEOUT);
+  if (status!=asynSuccess) {
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "%s/%s:%d: ERROR (axis %d): Failed to read control word from ecmc.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      axisId_);
+    return asynError;
+  }
+
+  *controlWd = controlWdTemp;
+
+  return asynSuccess;
+}
+
+asynStatus EthercatMCAxisEcmc::writeControlWd(ecmcAxisControlWordType controlWd) {
+  epicsInt32 *pCntWd = (epicsInt32 *)&controlWd;
+  asynStatus status = pasynInt32SyncIO->write(asynUserCntrlWd_,*pCntWd,DEFAULT_CONTROLLER_TIMEOUT);
+  if (status!=asynSuccess) {
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "%s/%s:%d: ERROR (axis %d): Failed to read control word from ecmc.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      axisId_);
+    return asynError;
+  }  
+  return asynSuccess;
+}
+
+
+asynStatus EthercatMCAxisEcmc::readAllStatus() {
+  
+  asynStatus status;
+  status = readStatusWd();
+  if(status) {
+    return status;
+  }
+  status =readDiagStr();
+  if(status) {
+    return status;
+  }
+  
+   int32_t *temp = (int32_t*) &statusWd_;
+   printf("##########\n");
+   printf("Status word (%d): %d\n",axisId_,*temp);
+  // printf("Act pos (%d)    : %lf\n",axisId_,actPos_);
+
+  return asynSuccess;
 }

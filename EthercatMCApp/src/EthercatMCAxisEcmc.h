@@ -8,10 +8,95 @@ FILENAME...   EthercatMCAxis.h
 #include "asynMotorAxis.h"
 #include <stdint.h>
 #include <asynInt32SyncIO.h>
+#include <asynFloat64SyncIO.h>
+#include <asynInt8ArraySyncIO.h>
 
 #define AMPLIFIER_ON_FLAG_CREATE_AXIS  (1)
 #define AMPLIFIER_ON_FLAG_AUTO_ON      (1<<1)
 #define AMPLIFIER_ON_FLAG_USING_CNEN   (1<<2)
+
+// ECMC
+#define ECMC_MAX_ASYN_DIAG_STR_LEN    256
+#define ECMC_MAX_ASYN_DRVINFO_STR_LEN 128
+// Statuses
+#define ECMC_ASYN_AXIS_STAT_STRING          "T_SMP_MS=%d/TYPE=asynInt32/ax%d.status?"
+#define ECMC_ASYN_AXIS_DIAG_STRING          "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnostic?"
+// Control
+#define ECMC_ASYN_AXIS_CONT_STRING          "T_SMP_MS=%d/TYPE=asynInt32/ax%d.control="
+#define ECMC_ASYN_AXIS_TARG_POS_STRING      "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetpos="
+#define ECMC_ASYN_AXIS_TARG_VEL_STRING      "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetvel="
+#define ECMC_ASYN_AXIS_TARG_ACC_STRING      "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetacc="
+#define ECMC_ASYN_AXIS_SOFT_LIM_BWD_STRING  "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.soflimbwd="
+#define ECMC_ASYN_AXIS_SOFT_LIM_FWD_STRING  "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.soflimfwd="
+
+typedef struct {
+  unsigned char              enabled:1;
+  unsigned char              execute:1;
+  unsigned char              busy:1;
+  unsigned char              attarget:1;
+  unsigned char              moving:1;
+  unsigned char              limitfwd:1;
+  unsigned char              limitbwd:1;
+  unsigned char              homeswitch:1;
+  unsigned char              instartup:1;
+  unsigned char              inrealtime:1;
+  unsigned char              trajsource:1;
+  unsigned char              encsource:1;
+  unsigned char              plccmdallowed:1;
+  unsigned char              softlimfwdena:1;
+  unsigned char              softlimbwdena:1;
+  unsigned char              unused:1;
+  unsigned char              seqstate:8;
+  unsigned char              lastilock:8;
+} ecmcAxisStatusWordType;
+
+typedef struct {
+  unsigned char              enable:1;
+  unsigned char              execute:1;
+  unsigned char              reset:1;
+  unsigned char              softlimfwdena:1;
+  unsigned char              softlimbwdena:1;
+  unsigned char              unused_1:3;
+  unsigned char              unused_2:8;
+  unsigned char              cmd:8;
+  unsigned int               cmddata:8;
+}ecmcAxisControlWordType;
+
+// 6,0.000000,0.000000,0.000000,0.000000,0.000000,0,0.000000,0.000000,0.000000,0.000000,0,8598,0,0,0,0,0,0,0,1,0,0,0,0,1,1,1,1,1
+typedef struct {
+  int    axId;            // 1
+  double setpos;          // 2
+  double actpos;          // 3
+  double poserr;          // 4
+  double targpos;         // 5
+  double targposerr;      // 6
+  int    rawpos;          // 7
+  double cntrlout;        // 8
+  double setvel;          // 9
+  double actvel;          // 10
+  double rawvelff;        // 11
+  int    rawvel;          // 12     
+  int    cyclecnt;        // 13
+  int    error;           // 14
+  int    cmd;             // 15
+  int    cmddata;         // 16
+  int    seqstate;        // 17
+  int    ilock;           // 18
+  int    ilocklastactive; // 19
+  int    trajsource;      // 20
+  int    encsource;       // 21
+  int    enable;          // 22
+  int    enabled;         // 23
+  int    execute;         // 24
+  int    busy;            // 25
+  int    attarget;        // 26
+  int    homed;           // 27
+  int    lowlim;          // 28
+  int    highlim;         // 29
+  int    homesensor;      // 30
+} ecmcDiagStringData;
+
+//ECMC
 
 extern const char *modNamEMC;
 
@@ -235,9 +320,27 @@ private:
   void updateMsgTxtFromDriver(const char *value);
 #endif
 
-   asynUser *asynUserTestInt32_;
-  //asynInt32Client ecmcStatusWordClient_;
-
+  // ECMC specific
+  asynStatus connectEcmcAxis();
+  asynStatus readStatusWd();
+  asynStatus readDiagStr();
+  asynStatus readControlWd(ecmcAxisControlWordType *controlWd);
+  asynStatus writeControlWd(ecmcAxisControlWordType controlWd);
+  asynStatus readAllStatus();  
+  asynUser *asynUserStatWd_;      // "T_SMP_MS=%d/TYPE=asynInt32/ax%d.status?"
+  asynUser *asynUserDiagStr_;     // "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnostic?"  
+  asynUser *asynUserCntrlWd_;     // "T_SMP_MS=%d/TYPE=asynInt32/ax%d.control="
+  asynUser *asynUserTargPos_;     // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetpos="
+  asynUser *asynUserTargVel_;     // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetvel="
+  asynUser *asynUserTargAcc_;     // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetacc="
+  asynUser *asynUserSoftLimBwd_;  // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.soflimbwd="
+  asynUser *asynUserSoftLimFwd_;  // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.soflimfwd="
+  char      diagStringBuffer_[ECMC_MAX_ASYN_DIAG_STR_LEN];
+  int       axisId_;
+  //double    actPos_;
+  ecmcAxisStatusWordType statusWd_;
+  ecmcDiagStringData     diagData_;
+  // ECMC end
   friend class EthercatMCController;
 };
 

@@ -126,7 +126,12 @@ EthercatMCController::EthercatMCController(const char *portName,
                          0, 0)  // Default priority and stack size
 {
   asynStatus status;
-  mcuPortName_ = strdup(MotorPortName);
+  // ECMC
+  mcuPortName_      = strdup(MotorPortName);
+  movingPollPeriod_ = movingPollPeriod;
+  idlePollPeriod_   = idlePollPeriod;
+  // ECMC
+
   /* Controller */
   memset(&ctrlLocal, 0, sizeof(ctrlLocal));
   ctrlLocal.oldStatus = asynDisconnected;  
@@ -209,9 +214,13 @@ EthercatMCController::EthercatMCController(const char *portName,
 
   startPoller(movingPollPeriod, idlePollPeriod, 2);
 
-
 }
 
+EthercatMCController::~EthercatMCController() {
+  // ECMC
+  free(mcuPortName_);
+  // ECMC
+}
 
 /** Creates a new EthercatMCController object.
   * Configuration command, called directly or from iocsh
