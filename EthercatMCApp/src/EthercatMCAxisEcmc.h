@@ -21,6 +21,7 @@ FILENAME...   EthercatMCAxis.h
 // Statuses
 #define ECMC_ASYN_AXIS_STAT_STRING          "T_SMP_MS=%d/TYPE=asynInt32/ax%d.status?"
 #define ECMC_ASYN_AXIS_DIAG_STRING          "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnostic?"
+#define ECMC_ASYN_AXIS_DIAG_BIN_STRING      "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnosticbin?"
 // Control
 #define ECMC_ASYN_AXIS_CONT_STRING          "T_SMP_MS=%d/TYPE=asynInt32/ax%d.control="
 #define ECMC_ASYN_AXIS_TARG_POS_STRING      "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetpos="
@@ -29,6 +30,7 @@ FILENAME...   EthercatMCAxis.h
 #define ECMC_ASYN_AXIS_SOFT_LIM_BWD_STRING  "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.soflimbwd="
 #define ECMC_ASYN_AXIS_SOFT_LIM_FWD_STRING  "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.soflimfwd="
 
+// TODO Use common h file with ECMC for below types (or merge ECMC and this driver)
 typedef struct {
   unsigned char              enabled:1;
   unsigned char              execute:1;
@@ -96,7 +98,93 @@ typedef struct {
   int    homesensor;      // 30
 } ecmcDiagStringData;
 
-//ECMC
+enum motionCommandTypes {
+  ECMC_CMD_NOCMD      = -1,
+  ECMC_CMD_JOG        = 0,
+  ECMC_CMD_MOVEVEL    = 1,
+  ECMC_CMD_MOVEREL    = 2,
+  ECMC_CMD_MOVEABS    = 3,
+  ECMC_CMD_MOVEMODULO = 4,   // NOT IMPLEMENTED
+  ECMC_CMD_HOMING     = 10,  // PARTLY IMPLEMENTED
+  // NOT IMPLEMENTED (implemented in another way..)
+  ECMC_CMD_SUPERIMP   = 20,  // NOT IMPLEMENTED
+  // NOT IMPLEMENTED (implemented in another way..)
+  ECMC_CMD_GEAR       = 30,
+};
+
+enum interlockTypes {
+  ECMC_INTERLOCK_NONE                              = 0,
+  ECMC_INTERLOCK_SOFT_BWD                          = 1,
+  ECMC_INTERLOCK_SOFT_FWD                          = 2,
+  ECMC_INTERLOCK_HARD_BWD                          = 3,
+  ECMC_INTERLOCK_HARD_FWD                          = 4,
+  ECMC_INTERLOCK_NO_EXECUTE                        = 5,
+  ECMC_INTERLOCK_POSITION_LAG                      = 6,
+  ECMC_INTERLOCK_BOTH_LIMITS                       = 7,
+  ECMC_INTERLOCK_EXTERNAL                          = 8,
+  ECMC_INTERLOCK_TRANSFORM                         = 9,
+  ECMC_INTERLOCK_MAX_SPEED                         = 10,
+  ECMC_INTERLOCK_CONT_HIGH_LIMIT                   = 11,
+  ECMC_INTERLOCK_CONT_OUT_INCREASE_AT_LIMIT_SWITCH = 12,
+  ECMC_INTERLOCK_AXIS_ERROR_STATE                  = 13,
+  ECMC_INTERLOCK_UNEXPECTED_LIMIT_SWITCH_BEHAVIOUR = 14,
+  ECMC_INTERLOCK_VELOCITY_DIFF                     = 15,
+  ECMC_INTERLOCK_ETHERCAT_MASTER_NOT_OK            = 16,
+  ECMC_INTERLOCK_PLC_NORMAL                        = 17,
+  ECMC_INTERLOCK_PLC_BWD                           = 18,
+  ECMC_INTERLOCK_PLC_FWD                           = 19,
+};
+
+enum dataSource {
+  ECMC_DATA_SOURCE_INTERNAL           = 0,
+  ECMC_DATA_SOURCE_EXTERNALENCODER    = 1,
+  ECMC_DATA_SOURCE_EXTERNALTRAJECTORY = 2
+};
+
+typedef struct {
+  double             positionSetpoint;
+  double             positionActual;
+  double             positionError;
+  double             positionTarget;
+  double             cntrlError;
+  double             cntrlOutput;
+  double             velocityActual;
+  double             velocitySetpoint;
+  double             velocityFFRaw;
+  int64_t            positionRaw;
+  int                error;
+  int                velocitySetpointRaw;
+  int                seqState;
+  int                cmdData;
+  motionCommandTypes command;
+  interlockTypes     trajInterlock;
+  interlockTypes     lastActiveInterlock;
+  dataSource         trajSource;
+  dataSource         encSource;
+  bool               enable;
+  bool               enabled;
+  bool               execute;
+  bool               busy;
+  bool               atTarget;
+  bool               homed;
+  bool               limitFwd;
+  bool               limitBwd;
+  bool               homeSwitch;
+  bool               sumIlockFwd;
+  bool               sumIlockBwd;
+} ecmcAxisStatusOnChangeType;
+
+typedef struct {
+  int                        axisID;
+  int                        cycleCounter;
+  double                     acceleration;
+  double                     deceleration;
+  bool                       reset;
+  bool                       moving;
+  bool                       stall;
+  ecmcAxisStatusOnChangeType onChangeData;
+} ecmcAxisStatusType;
+//ECMC End
 
 extern const char *modNamEMC;
 
@@ -323,12 +411,15 @@ private:
   // ECMC specific
   asynStatus connectEcmcAxis();
   asynStatus readStatusWd();
-  asynStatus readDiagStr();
+  asynStatus readDiagStr();       // Read ascii diag data over int8array interface
+  asynStatus readDiagBin();       // Read binary diag data over int8array interface
+  asynStatus printDiagBinData();
   asynStatus readControlWd(ecmcAxisControlWordType *controlWd);
   asynStatus writeControlWd(ecmcAxisControlWordType controlWd);
   asynStatus readAllStatus();  
   asynUser *asynUserStatWd_;      // "T_SMP_MS=%d/TYPE=asynInt32/ax%d.status?"
   asynUser *asynUserDiagStr_;     // "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnostic?"  
+  asynUser *asynUserDiagBin_;     // "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnosticbin?"  
   asynUser *asynUserCntrlWd_;     // "T_SMP_MS=%d/TYPE=asynInt32/ax%d.control="
   asynUser *asynUserTargPos_;     // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetpos="
   asynUser *asynUserTargVel_;     // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetvel="
@@ -340,6 +431,7 @@ private:
   //double    actPos_;
   ecmcAxisStatusWordType statusWd_;
   ecmcDiagStringData     diagData_;
+  ecmcAxisStatusType     diagBinData_;
   // ECMC end
   friend class EthercatMCController;
 };

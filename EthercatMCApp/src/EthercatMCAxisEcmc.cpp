@@ -48,7 +48,8 @@ EthercatMCAxisEcmc::EthercatMCAxisEcmc(EthercatMCController *pC, int axisNo,
 {
   // ECMC  
   asynUserStatWd_     = NULL; // "T_SMP_MS=%d/TYPE=asynInt32/ax%d.status?"
-  asynUserDiagStr_    = NULL; // "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnostic?"  
+  asynUserDiagStr_    = NULL; // "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnostic?"
+  asynUserDiagBin_    = NULL; // "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnosticbin?"
   asynUserCntrlWd_    = NULL; // "T_SMP_MS=%d/TYPE=asynInt32/ax%d.control="
   asynUserTargPos_    = NULL; // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetpos="
   asynUserTargVel_    = NULL; // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetvel="
@@ -57,6 +58,7 @@ EthercatMCAxisEcmc::EthercatMCAxisEcmc(EthercatMCController *pC, int axisNo,
   asynUserSoftLimFwd_ = NULL; // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.soflimfwd="
 
   memset(&diagData_,0, sizeof(diagData_));
+  memset(&diagBinData_,0, sizeof(diagBinData_));
   memset(&diagStringBuffer_[0],0,sizeof(diagStringBuffer_));
   axisId_ = axisNo;
   //ECMC
@@ -2572,6 +2574,35 @@ asynStatus EthercatMCAxisEcmc::connectEcmcAxis() {
       name);
   }
 
+  // Diag binary data
+  charCount = snprintf(name,
+                       sizeof(buffer),
+                       ECMC_ASYN_AXIS_DIAG_BIN_STRING,
+                       movingPollPeriodMs,
+                       axisId_);
+  if (charCount >= sizeof(buffer) - 1) {    
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "%s/%s:%d: ERROR (axis %d): Failed to generate drvInfo for %s on asynport %s.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      axisId_,
+      ECMC_ASYN_AXIS_DIAG_BIN_STRING,
+      pC_->mcuPortName_);
+    return asynError;
+  }
+           
+  status = pasynInt8ArraySyncIO->connect(pC_->mcuPortName_, 0, &asynUserDiagBin_, name);
+  if (status!=asynSuccess) {
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "%s/%s:%d: ERROR (axis %d): Failed to connect drvInfo to ECMC for parameter %s.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      axisId_,
+      name);
+  }
+
   readAllStatus();
   return asynSuccess;
 }
@@ -2601,7 +2632,7 @@ asynStatus EthercatMCAxisEcmc::readDiagStr() {
                                             ECMC_MAX_ASYN_DIAG_STR_LEN,
                                             &inBytes,
                                             DEFAULT_CONTROLLER_TIMEOUT);  
-  if(status==asynSuccess) printf("asynSuccess: len= %lu, :%s\n ",strlen(diagStringBuffer_),diagStringBuffer_);
+  if(status==asynSuccess) printf("asynSuccess: strlen=%lu, bytes=%lu, string=%s\n ",strlen(diagStringBuffer_),inBytes,diagStringBuffer_);
   else printf("asynError\n");
   if (status!=asynSuccess) {
     asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
@@ -2658,6 +2689,30 @@ asynStatus EthercatMCAxisEcmc::readDiagStr() {
   return asynSuccess;
 }
 
+asynStatus EthercatMCAxisEcmc::readDiagBin() {
+  
+  size_t inBytes = 0;
+  ecmcAxisStatusType diagBinDataTemp;
+  asynStatus status = pasynInt8ArraySyncIO->read(asynUserDiagBin_,
+                                            (epicsInt8*)&diagBinDataTemp,
+                                            sizeof(ecmcAxisStatusType),
+                                            &inBytes,
+                                            DEFAULT_CONTROLLER_TIMEOUT);    
+
+  if (status!=asynSuccess || inBytes != sizeof(ecmcAxisStatusType)) {
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "%s/%s:%d: ERROR (axis %d): Failed to read diag binary data from ecmc.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      axisId_);
+    return asynError;
+  }
+
+  diagBinData_=diagBinDataTemp;
+  return asynSuccess;
+}
+
 asynStatus EthercatMCAxisEcmc::readControlWd(ecmcAxisControlWordType *controlWd) {
   
   ecmcAxisControlWordType controlWdTemp;
@@ -2700,15 +2755,64 @@ asynStatus EthercatMCAxisEcmc::readAllStatus() {
   if(status) {
     return status;
   }
-  status =readDiagStr();
+
+  // Use readDiagBin instead
+  /*status =readDiagStr();
+  if(status) {
+    return status;
+  }*/
+
+  status =readDiagBin();
   if(status) {
     return status;
   }
-  
-   int32_t *temp = (int32_t*) &statusWd_;
-   printf("##########\n");
-   printf("Status word (%d): %d\n",axisId_,*temp);
+  printDiagBinData() ;
+  int32_t *temp = (int32_t*) &statusWd_;
+  printf("##########\n");
+  printf("Status word (%d): %d\n",axisId_,*temp);
   // printf("Act pos (%d)    : %lf\n",axisId_,actPos_);
 
+  return asynSuccess;
+}
+
+asynStatus EthercatMCAxisEcmc::printDiagBinData() {
+  
+  printf(".diagBinData_.axisID = %d\n",diagBinData_.axisID);
+  printf(".diagBinData_.cycleCounter = %d\n",diagBinData_.cycleCounter);
+  printf(".diagBinData_.acceleration = %lf\n",diagBinData_.acceleration);
+  printf(".diagBinData_.deceleration = %lf\n",diagBinData_.deceleration);
+  printf(".diagBinData_.reset = %d\n",diagBinData_.reset);
+  printf(".diagBinData_.moving = %d\n",diagBinData_.moving);
+  printf(".diagBinData_.stall = %d\n",diagBinData_.stall);
+  printf(".diagBinData_.onChangeData.positionSetpoint = %lf\n",diagBinData_.onChangeData.positionSetpoint);
+  printf(".diagBinData_.onChangeData.positionActual = %lf\n",diagBinData_.onChangeData.positionActual);
+  printf(".diagBinData_.onChangeData.positionError = %lf\n",diagBinData_.onChangeData.positionError);
+  printf(".diagBinData_.onChangeData.positionTarget = %lf\n",diagBinData_.onChangeData.positionTarget);
+  printf(".diagBinData_.onChangeData.cntrlError = %lf\n",diagBinData_.onChangeData.cntrlError);
+  printf(".diagBinData_.onChangeData.cntrlOutput = %lf\n",diagBinData_.onChangeData.cntrlOutput);
+  printf(".diagBinData_.onChangeData.velocityActual = %lf\n",diagBinData_.onChangeData.velocityActual);
+  printf(".diagBinData_.onChangeData.velocitySetpoint = %lf\n",diagBinData_.onChangeData.velocitySetpoint);
+  printf(".diagBinData_.onChangeData.velocityFFRaw = %lf\n",diagBinData_.onChangeData.velocityFFRaw);
+  printf(".diagBinData_.onChangeData.positionRaw = %ld\n",diagBinData_.onChangeData.positionRaw);
+  printf(".diagBinData_.onChangeData.error = %d\n",diagBinData_.onChangeData.error);
+  printf(".diagBinData_.onChangeData.velocitySetpointRaw = %d\n",diagBinData_.onChangeData.velocitySetpointRaw);
+  printf(".diagBinData_.onChangeData.seqState = %d\n",diagBinData_.onChangeData.seqState);
+  printf(".diagBinData_.onChangeData.cmdData = %d\n",diagBinData_.onChangeData.cmdData);
+  printf(".diagBinData_.onChangeData.command = %d\n",(int)diagBinData_.onChangeData.command);
+  printf(".diagBinData_.onChangeData.trajInterlock = %d\n",(int)diagBinData_.onChangeData.trajInterlock);
+  printf(".diagBinData_.onChangeData.lastActiveInterlock = %d\n",(int)diagBinData_.onChangeData.lastActiveInterlock);
+  printf(".diagBinData_.onChangeData.trajSource = %d\n",(int)diagBinData_.onChangeData.trajSource);
+  printf(".diagBinData_.onChangeData.encSource = %d\n",(int)diagBinData_.onChangeData.encSource);
+  printf(".diagBinData_.onChangeData.enable = %d\n",diagBinData_.onChangeData.enable);
+  printf(".diagBinData_.onChangeData.enabled = %d\n",diagBinData_.onChangeData.enabled);
+  printf(".diagBinData_.onChangeData.execute = %d\n",diagBinData_.onChangeData.execute);
+  printf(".diagBinData_.onChangeData.busy = %d\n",diagBinData_.onChangeData.busy);
+  printf(".diagBinData_.onChangeData.atTarget = %d\n",diagBinData_.onChangeData.atTarget);
+  printf(".diagBinData_.onChangeData.homed = %d\n",diagBinData_.onChangeData.homed);
+  printf(".diagBinData_.onChangeData.limitFwd = %d\n",diagBinData_.onChangeData.limitFwd);
+  printf(".diagBinData_.onChangeData.limitBwd = %d\n",diagBinData_.onChangeData.limitBwd);
+  printf(".diagBinData_.onChangeData.homeSwitch = %d\n",diagBinData_.onChangeData.homeSwitch);
+  printf(".diagBinData_.onChangeData.sumIlockFwd = %d\n",diagBinData_.onChangeData.sumIlockFwd);
+  printf(".diagBinData_.onChangeData.sumIlockBwd = %d\n",diagBinData_.onChangeData.sumIlockBwd);
   return asynSuccess;
 }
