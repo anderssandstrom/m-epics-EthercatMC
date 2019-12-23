@@ -61,7 +61,9 @@ EthercatMCAxisEcmc::EthercatMCAxisEcmc(EthercatMCController *pC, int axisNo,
   memset(&diagBinData_,0, sizeof(diagBinData_));
   memset(&diagStringBuffer_[0],0,sizeof(diagStringBuffer_));
   axisId_ = axisNo;
-  //ECMC
+  
+  oldPositionAct_ = 0;
+  //ECMC End
   
   int powerAutoOnOff = -1; /* undefined */
   /* Some parameters are only defined in the ESS fork of the motor module.
@@ -893,7 +895,7 @@ asynStatus EthercatMCAxisEcmc::resetAxis(void)
   return status;
 }
 
-bool EthercatMCAxisEcmc::pollPowerIsOn(void)
+/*bool EthercatMCAxisEcmc::pollPowerIsOn(void)
 {
   int ret = 0;
   asynStatus status = getValueFromAxis(".bEnabled", &ret);
@@ -901,7 +903,7 @@ bool EthercatMCAxisEcmc::pollPowerIsOn(void)
     return true;
   else
     return false;
-}
+}*/
 
 /** Enable the amplifier on an axis
  *
@@ -1097,7 +1099,6 @@ void EthercatMCAxisEcmc::callParamCallbacksUpdateError()
   callParamCallbacks();
 }
 
-
 asynStatus EthercatMCAxisEcmc::pollAll(bool *moving, st_axis_status_type *pst_axis_status)
 {
   asynStatus comStatus;
@@ -1272,36 +1273,44 @@ pollAllWrongnvals:
  * \param[out] moving A flag that is set indicating that the axis is moving (true) or done (false). */
 asynStatus EthercatMCAxisEcmc::poll(bool *moving)
 {
-
-  // ECMC
-  readAllStatus();
-  // ECMC
   asynStatus comStatus = asynSuccess;
   st_axis_status_type st_axis_status;
+
   double timeBefore = EthercatMCgetNowTimeSecs();
 #ifndef motorWaitPollsBeforeReadyString
   int waitNumPollsBeforeReady_ = drvlocal.waitNumPollsBeforeReady;
 #endif
 
+  /* Driver not yet initialized, do nothing */
+  if (!drvlocal.scaleFactor) return comStatus;
+
   if (drvlocal.supported.statusVer == -1) {
     callParamCallbacksUpdateError();
     return asynSuccess;
   }
-  /* Driver not yet initialized, do nothing */
-  if (!drvlocal.scaleFactor) return comStatus;
 
   memset(&st_axis_status, 0, sizeof(st_axis_status));
-  comStatus = pollAll(moving, &st_axis_status);
-  if (comStatus) {
-    asynPrint(pC_->pasynUserController_, ASYN_TRACE_ERROR|ASYN_TRACEIO_DRIVER,
-              "%sout=%s in=%s return=%s (%d)\n",
-              modNamEMC, pC_->outString_, pC_->inString_,
-              EthercatMCstrStatus(comStatus), (int)comStatus);
-    if (comStatus == asynDisabled) {
-      return asynSuccess;
-    }
-    goto skip;
-  }
+
+  // ---------------------ECMC
+  readAllStatus();
+  uglyConvertFunc(&diagBinData_,&st_axis_status);
+  
+  // ---------------------ECMC
+
+  /* Disable these lines since data is fetched with readAllStatus() function*/
+
+  // memset(&st_axis_status, 0, sizeof(st_axis_status));
+  // comStatus = pollAll(moving, &st_axis_status);
+  // if (comStatus) {
+  //   asynPrint(pC_->pasynUserController_, ASYN_TRACE_ERROR|ASYN_TRACEIO_DRIVER,
+  //             "%sout=%s in=%s return=%s (%d)\n",
+  //             modNamEMC, pC_->outString_, pC_->inString_,
+  //             EthercatMCstrStatus(comStatus), (int)comStatus);
+  //   if (comStatus == asynDisabled) {
+  //     return asynSuccess;
+  //   }
+  //   goto skip;
+  // }
 
   if (drvlocal.cfgDebug_str) {
     asynStatus comStatus;
@@ -2334,6 +2343,21 @@ asynStatus EthercatMCAxisEcmc::setValueOnAxis(const char* var, int value)
   return pC_->writeReadACK(ASYN_TRACE_INFO);
 }
 
+/** 
+ * Connect to ECMC axis over SyncIO interface
+ * 
+ *  All read / write parameters are connected:
+ *  1. "T_SMP_MS=%d/TYPE=asynInt32/ax%d.status?"
+ *  2. "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnostic?"
+ *  3. "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnosticbin?"
+ *  4. "T_SMP_MS=%d/TYPE=asynInt32/ax%d.control="
+ *  5. "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetpos="
+ *  6. "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetvel="
+ *  7. "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetacc="
+ *  8. "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.soflimbwd="
+ *  9. "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.soflimfwd="
+ * 
+*/
 asynStatus EthercatMCAxisEcmc::connectEcmcAxis() {
 
   char buffer[ECMC_MAX_ASYN_DRVINFO_STR_LEN];
@@ -2574,7 +2598,7 @@ asynStatus EthercatMCAxisEcmc::connectEcmcAxis() {
       name);
   }
 
-  // Diag binary data
+  // Diag binary struct data (over asynInt8Array interface)
   charCount = snprintf(name,
                        sizeof(buffer),
                        ECMC_ASYN_AXIS_DIAG_BIN_STRING,
@@ -2632,11 +2656,10 @@ asynStatus EthercatMCAxisEcmc::readDiagStr() {
                                             ECMC_MAX_ASYN_DIAG_STR_LEN,
                                             &inBytes,
                                             DEFAULT_CONTROLLER_TIMEOUT);  
-  if(status==asynSuccess) printf("asynSuccess: strlen=%lu, bytes=%lu, string=%s\n ",strlen(diagStringBuffer_),inBytes,diagStringBuffer_);
-  else printf("asynError\n");
+  
   if (status!=asynSuccess) {
     asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
-              "%s/%s:%d: ERROR (axis %d): Failed to read diag string from ecmc.\n",
+              "%s/%s:%d: ERROR (axis %d): Failed to read diagnostic string from ecmc.\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -2682,10 +2705,17 @@ asynStatus EthercatMCAxisEcmc::readDiagStr() {
                   &diagDataTemp.highlim,         // 29
                   &diagDataTemp.homesensor);     // 30
 
-  if (nvals == 30) {
-    memcpy(&diagData_,&diagDataTemp,sizeof(ecmcDiagStringData));
-    printf("SUCCESS SCANF %d\n",diagDataTemp.cyclecnt);
+  if (nvals != 30) {
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+             "%s/%s:%d: ERROR (axis %d): Failed to parse diaganostic string from ecmc.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      axisId_);
+    return asynError;
   }
+
+  memcpy(&diagData_,&diagDataTemp,sizeof(ecmcDiagStringData));  
   return asynSuccess;
 }
 
@@ -2737,7 +2767,7 @@ asynStatus EthercatMCAxisEcmc::writeControlWd(ecmcAxisControlWordType controlWd)
   asynStatus status = pasynInt32SyncIO->write(asynUserCntrlWd_,*pCntWd,DEFAULT_CONTROLLER_TIMEOUT);
   if (status!=asynSuccess) {
     asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
-              "%s/%s:%d: ERROR (axis %d): Failed to read control word from ecmc.\n",
+              "%s/%s:%d: ERROR (axis %d): Failed to write control word to ecmc.\n",
       __FILE__,
       __FUNCTION__,
       __LINE__,
@@ -2747,16 +2777,93 @@ asynStatus EthercatMCAxisEcmc::writeControlWd(ecmcAxisControlWordType controlWd)
   return asynSuccess;
 }
 
+asynStatus EthercatMCAxisEcmc::writeTargetPos(double pos) {
+  
+  asynStatus status = pasynFloat64SyncIO->write(asynUserTargPos_,(epicsFloat64)pos,DEFAULT_CONTROLLER_TIMEOUT);
+  if (status!=asynSuccess) {
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "%s/%s:%d: ERROR (axis %d): Failed to write target position to ecmc.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      axisId_);
+    return asynError;
+  }  
+  return asynSuccess;
+}
+
+asynStatus EthercatMCAxisEcmc::writeTargetVel(double vel) {
+  
+  asynStatus status = pasynFloat64SyncIO->write(asynUserTargVel_,(epicsFloat64)vel,DEFAULT_CONTROLLER_TIMEOUT);
+  if (status!=asynSuccess) {
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "%s/%s:%d: ERROR (axis %d): Failed to write target velocity to ecmc.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      axisId_);
+    return asynError;
+  }  
+  return asynSuccess;
+}
+
+asynStatus EthercatMCAxisEcmc::writeTargetAcc(double acc) {
+  
+  asynStatus status = pasynFloat64SyncIO->write(asynUserTargAcc_,(epicsFloat64)acc,DEFAULT_CONTROLLER_TIMEOUT);
+  if (status!=asynSuccess) {
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "%s/%s:%d: ERROR (axis %d): Failed to write target acceleration to ecmc.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      axisId_);
+    return asynError;
+  }  
+  return asynSuccess;
+}
+
+asynStatus EthercatMCAxisEcmc::writeSoftLimBwd(double softlimbwd) {
+  
+  asynStatus status = pasynFloat64SyncIO->write(asynUserSoftLimBwd_,(epicsFloat64)softlimbwd,DEFAULT_CONTROLLER_TIMEOUT);
+  if (status!=asynSuccess) {
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "%s/%s:%d: ERROR (axis %d): Failed to write bwd softlimit to ecmc.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      axisId_);
+    return asynError;
+  }  
+  return asynSuccess;
+}
+
+asynStatus EthercatMCAxisEcmc::writeSoftLimFwd(double softlimfwd) {
+  
+  asynStatus status = pasynFloat64SyncIO->write(asynUserSoftLimFwd_,(epicsFloat64)softlimfwd,DEFAULT_CONTROLLER_TIMEOUT);
+  if (status!=asynSuccess) {
+    asynPrint(pC_->pasynUserSelf, ASYN_TRACE_ERROR,
+              "%s/%s:%d: ERROR (axis %d): Failed to write fwd softlimit to ecmc.\n",
+      __FILE__,
+      __FUNCTION__,
+      __LINE__,
+      axisId_);
+    return asynError;
+  }  
+  return asynSuccess;
+}
 
 asynStatus EthercatMCAxisEcmc::readAllStatus() {
   
   asynStatus status;
+
+  // Only needed for soflimit enable and plc enable and so on.. 
+  // TODO: Merge to one struct only instead of two like now..
   status = readStatusWd();
   if(status) {
     return status;
   }
 
-  // Use readDiagBin instead
+  // Use readDiagBin instead because more effichent..
   /*status =readDiagStr();
   if(status) {
     return status;
@@ -2766,53 +2873,96 @@ asynStatus EthercatMCAxisEcmc::readAllStatus() {
   if(status) {
     return status;
   }
-  printDiagBinData() ;
-  int32_t *temp = (int32_t*) &statusWd_;
+
+  //printDiagBinData();
+  /*int32_t *temp = (int32_t*) &statusWd_;
   printf("##########\n");
-  printf("Status word (%d): %d\n",axisId_,*temp);
+  printf("Status word (%d): %d\n",axisId_,*temp);*/
   // printf("Act pos (%d)    : %lf\n",axisId_,actPos_);
 
   return asynSuccess;
 }
 
+//Just for debug
 asynStatus EthercatMCAxisEcmc::printDiagBinData() {
   
-  printf(".diagBinData_.axisID = %d\n",diagBinData_.axisID);
-  printf(".diagBinData_.cycleCounter = %d\n",diagBinData_.cycleCounter);
-  printf(".diagBinData_.acceleration = %lf\n",diagBinData_.acceleration);
-  printf(".diagBinData_.deceleration = %lf\n",diagBinData_.deceleration);
-  printf(".diagBinData_.reset = %d\n",diagBinData_.reset);
-  printf(".diagBinData_.moving = %d\n",diagBinData_.moving);
-  printf(".diagBinData_.stall = %d\n",diagBinData_.stall);
-  printf(".diagBinData_.onChangeData.positionSetpoint = %lf\n",diagBinData_.onChangeData.positionSetpoint);
-  printf(".diagBinData_.onChangeData.positionActual = %lf\n",diagBinData_.onChangeData.positionActual);
-  printf(".diagBinData_.onChangeData.positionError = %lf\n",diagBinData_.onChangeData.positionError);
-  printf(".diagBinData_.onChangeData.positionTarget = %lf\n",diagBinData_.onChangeData.positionTarget);
-  printf(".diagBinData_.onChangeData.cntrlError = %lf\n",diagBinData_.onChangeData.cntrlError);
-  printf(".diagBinData_.onChangeData.cntrlOutput = %lf\n",diagBinData_.onChangeData.cntrlOutput);
-  printf(".diagBinData_.onChangeData.velocityActual = %lf\n",diagBinData_.onChangeData.velocityActual);
-  printf(".diagBinData_.onChangeData.velocitySetpoint = %lf\n",diagBinData_.onChangeData.velocitySetpoint);
-  printf(".diagBinData_.onChangeData.velocityFFRaw = %lf\n",diagBinData_.onChangeData.velocityFFRaw);
-  printf(".diagBinData_.onChangeData.positionRaw = %ld\n",diagBinData_.onChangeData.positionRaw);
-  printf(".diagBinData_.onChangeData.error = %d\n",diagBinData_.onChangeData.error);
-  printf(".diagBinData_.onChangeData.velocitySetpointRaw = %d\n",diagBinData_.onChangeData.velocitySetpointRaw);
-  printf(".diagBinData_.onChangeData.seqState = %d\n",diagBinData_.onChangeData.seqState);
-  printf(".diagBinData_.onChangeData.cmdData = %d\n",diagBinData_.onChangeData.cmdData);
-  printf(".diagBinData_.onChangeData.command = %d\n",(int)diagBinData_.onChangeData.command);
-  printf(".diagBinData_.onChangeData.trajInterlock = %d\n",(int)diagBinData_.onChangeData.trajInterlock);
-  printf(".diagBinData_.onChangeData.lastActiveInterlock = %d\n",(int)diagBinData_.onChangeData.lastActiveInterlock);
-  printf(".diagBinData_.onChangeData.trajSource = %d\n",(int)diagBinData_.onChangeData.trajSource);
-  printf(".diagBinData_.onChangeData.encSource = %d\n",(int)diagBinData_.onChangeData.encSource);
-  printf(".diagBinData_.onChangeData.enable = %d\n",diagBinData_.onChangeData.enable);
-  printf(".diagBinData_.onChangeData.enabled = %d\n",diagBinData_.onChangeData.enabled);
-  printf(".diagBinData_.onChangeData.execute = %d\n",diagBinData_.onChangeData.execute);
-  printf(".diagBinData_.onChangeData.busy = %d\n",diagBinData_.onChangeData.busy);
-  printf(".diagBinData_.onChangeData.atTarget = %d\n",diagBinData_.onChangeData.atTarget);
-  printf(".diagBinData_.onChangeData.homed = %d\n",diagBinData_.onChangeData.homed);
-  printf(".diagBinData_.onChangeData.limitFwd = %d\n",diagBinData_.onChangeData.limitFwd);
-  printf(".diagBinData_.onChangeData.limitBwd = %d\n",diagBinData_.onChangeData.limitBwd);
-  printf(".diagBinData_.onChangeData.homeSwitch = %d\n",diagBinData_.onChangeData.homeSwitch);
-  printf(".diagBinData_.onChangeData.sumIlockFwd = %d\n",diagBinData_.onChangeData.sumIlockFwd);
-  printf(".diagBinData_.onChangeData.sumIlockBwd = %d\n",diagBinData_.onChangeData.sumIlockBwd);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.axisID = %d\n",diagBinData_.axisID);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.cycleCounter = %d\n",diagBinData_.cycleCounter);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.acceleration = %lf\n",diagBinData_.acceleration);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.deceleration = %lf\n",diagBinData_.deceleration);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.reset = %d\n",diagBinData_.reset);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.moving = %d\n",diagBinData_.moving);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.stall = %d\n",diagBinData_.stall);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.positionSetpoint = %lf\n",diagBinData_.onChangeData.positionSetpoint);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.positionActual = %lf\n",diagBinData_.onChangeData.positionActual);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.positionError = %lf\n",diagBinData_.onChangeData.positionError);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.positionTarget = %lf\n",diagBinData_.onChangeData.positionTarget);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.cntrlError = %lf\n",diagBinData_.onChangeData.cntrlError);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.cntrlOutput = %lf\n",diagBinData_.onChangeData.cntrlOutput);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.velocityActual = %lf\n",diagBinData_.onChangeData.velocityActual);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.velocitySetpoint = %lf\n",diagBinData_.onChangeData.velocitySetpoint);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.velocityFFRaw = %lf\n",diagBinData_.onChangeData.velocityFFRaw);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.positionRaw = %ld\n",diagBinData_.onChangeData.positionRaw);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.error = %d\n",diagBinData_.onChangeData.error);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.velocitySetpointRaw = %d\n",diagBinData_.onChangeData.velocitySetpointRaw);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.seqState = %d\n",diagBinData_.onChangeData.seqState);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.cmdData = %d\n",diagBinData_.onChangeData.cmdData);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.command = %d\n",(int)diagBinData_.onChangeData.command);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.trajInterlock = %d\n",(int)diagBinData_.onChangeData.trajInterlock);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.lastActiveInterlock = %d\n",(int)diagBinData_.onChangeData.lastActiveInterlock);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.trajSource = %d\n",(int)diagBinData_.onChangeData.trajSource);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.encSource = %d\n",(int)diagBinData_.onChangeData.encSource);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.enable = %d\n",diagBinData_.onChangeData.enable);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.enabled = %d\n",diagBinData_.onChangeData.enabled);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.execute = %d\n",diagBinData_.onChangeData.execute);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.busy = %d\n",diagBinData_.onChangeData.busy);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.atTarget = %d\n",diagBinData_.onChangeData.atTarget);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.homed = %d\n",diagBinData_.onChangeData.homed);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.limitFwd = %d\n",diagBinData_.onChangeData.limitFwd);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.limitBwd = %d\n",diagBinData_.onChangeData.limitBwd);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.homeSwitch = %d\n",diagBinData_.onChangeData.homeSwitch);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.sumIlockFwd = %d\n",diagBinData_.onChangeData.sumIlockFwd);
+  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.sumIlockBwd = %d\n",diagBinData_.onChangeData.sumIlockBwd);
+  return asynSuccess;
+}
+
+asynStatus EthercatMCAxisEcmc::uglyConvertFunc(ecmcAxisStatusType*in ,st_axis_status_type *out) {
+  //just to test new interface.. Get all data from diagBinData_ instead    
+  out->bEnable              = in->onChangeData.enable;
+  out->bExecute             = in->onChangeData.execute;
+  out->nCommand             = in->onChangeData.command;
+  out->nCmdData             = in->onChangeData.cmdData;
+  out->fVelocity            = in->onChangeData.velocitySetpoint;
+  out->fPosition            = in->onChangeData.positionTarget;
+  out->fAcceleration        = in->acceleration;
+  out->fDecceleration       = in->deceleration;  
+  out->bHomeSensor          = in->onChangeData.homeSwitch;
+  out->bEnabled             = in->onChangeData.enabled;
+  out->bError               = in->onChangeData.error>0;
+  out->nErrorId             = in->onChangeData.error;
+  out->fActVelocity         = in->onChangeData.velocityActual;
+  out->fActPosition         = in->onChangeData.positionActual;
+  out->fActDiff             = in->onChangeData.positionError;
+  out->bHomed               = in->onChangeData.homed;
+  out->bBusy                = in->onChangeData.busy;
+  out->encoderRaw           = in->onChangeData.positionRaw;
+  out->atTarget             = in->onChangeData.atTarget;
+  out->bLimitBwd            = in->onChangeData.limitBwd;
+  out->bLimitFwd            = in->onChangeData.limitFwd;
+  
+  // Data derveid from struct
+  out->mvnNRdyNex           = in->onChangeData.busy || !in->onChangeData.atTarget;
+  out->motorStatusDirection = in->onChangeData.positionActual > 
+                                              oldPositionAct_ ? 1:0;
+  out->motorDiffPostion     = 1; /*Always set to 1?? why */
+
+  
+  //TODO not accesible for ecmc.. neeeded? Delete later
+  out->bJogFwd              = 0;
+  out->bJogBwd              = 0;
+  out->bReset               = 0;
+  out->fOverride            = 100;
+
+  oldPositionAct_ =  in->onChangeData.positionActual;
   return asynSuccess;
 }

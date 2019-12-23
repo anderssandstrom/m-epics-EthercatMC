@@ -395,7 +395,7 @@ private:
   asynStatus getValueFromController(const char* var, double *value);
 
   asynStatus resetAxis(void);
-  bool       pollPowerIsOn(void);
+  //bool       pollPowerIsOn(void);
   asynStatus enableAmplifier(int);
   asynStatus sendVelocityAndAccelExecute(double maxVeloEGU, double accEGU);
   asynStatus setClosedLoop(bool closedLoop);
@@ -413,10 +413,17 @@ private:
   asynStatus readStatusWd();
   asynStatus readDiagStr();       // Read ascii diag data over int8array interface
   asynStatus readDiagBin();       // Read binary diag data over int8array interface
-  asynStatus printDiagBinData();
+  asynStatus readAllStatus();
   asynStatus readControlWd(ecmcAxisControlWordType *controlWd);
   asynStatus writeControlWd(ecmcAxisControlWordType controlWd);
-  asynStatus readAllStatus();  
+  asynStatus writeTargetPos(double pos);
+  asynStatus writeTargetVel(double vel);
+  asynStatus writeTargetAcc(double acc);
+  asynStatus writeSoftLimBwd(double softlimbwd);
+  asynStatus writeSoftLimFwd(double softlimfwd);
+  asynStatus printDiagBinData();
+  // Temporary convert betwwen differnt structure types.. Remove later
+  asynStatus uglyConvertFunc(ecmcAxisStatusType*in ,st_axis_status_type *out);
   asynUser *asynUserStatWd_;      // "T_SMP_MS=%d/TYPE=asynInt32/ax%d.status?"
   asynUser *asynUserDiagStr_;     // "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnostic?"  
   asynUser *asynUserDiagBin_;     // "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnosticbin?"  
@@ -432,6 +439,8 @@ private:
   ecmcAxisStatusWordType statusWd_;
   ecmcDiagStringData     diagData_;
   ecmcAxisStatusType     diagBinData_;
+
+  double oldPositionAct_;  // needed for uglyConvertFunc().. 
   // ECMC end
   friend class EthercatMCController;
 };
