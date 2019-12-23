@@ -3034,8 +3034,7 @@ asynStatus EthercatMCAxisEcmc::uglyConvertFunc(ecmcAxisStatusType*in ,st_axis_st
 
   oldPositionAct_ =  in->onChangeData.positionActual;
 
-
-  printDiagBinData();
+  //printDiagBinData();
   return asynSuccess;
 }
 
