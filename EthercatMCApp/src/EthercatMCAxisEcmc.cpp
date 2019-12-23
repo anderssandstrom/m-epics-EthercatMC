@@ -29,6 +29,24 @@
    to "start" (report moving after a new move command */
 #define WAITNUMPOLLSBEFOREREADY 3
 
+static EthercatMCController *pC;
+static EthercatMCAxisEcmc   *axes;
+
+/* Callback for axis data struct (binary)
+*/
+void diagBinCallback(void *userPvt, asynUser *pasynUser, epicsInt8 *value, size_t nelements) {
+
+  EthercatMCAxisEcmc * axis = (EthercatMCAxisEcmc*)userPvt;
+  if(!axis) {
+    printf("Axis not found!!!!!!\n");
+    return;
+  }
+  if(nelements!=sizeof(ecmcAxisStatusType)) {
+    printf("Wrong byte count...ERROR!!!!!!\n");
+    return;
+  }
+  memcpy(axis->getDiagBinDataPtr(),value,sizeof(ecmcAxisStatusType));
+}
 
 //
 // These are the EthercatMCAxis methods
@@ -47,15 +65,21 @@ EthercatMCAxisEcmc::EthercatMCAxisEcmc(EthercatMCController *pC, int axisNo,
     pC_(pC)
 {
   // ECMC  
-  asynUserStatWd_     = NULL; // "T_SMP_MS=%d/TYPE=asynInt32/ax%d.status?"
-  asynUserDiagStr_    = NULL; // "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnostic?"
-  asynUserDiagBin_    = NULL; // "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnosticbin?"
-  asynUserCntrlWd_    = NULL; // "T_SMP_MS=%d/TYPE=asynInt32/ax%d.control="
-  asynUserTargPos_    = NULL; // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetpos="
-  asynUserTargVel_    = NULL; // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetvel="
-  asynUserTargAcc_    = NULL; // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetacc="
-  asynUserSoftLimBwd_ = NULL; // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.soflimbwd="
-  asynUserSoftLimFwd_ = NULL; // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.soflimfwd="
+  asynUserStatWd_      = NULL; // "T_SMP_MS=%d/TYPE=asynInt32/ax%d.status?"
+  asynUserDiagStr_     = NULL; // "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnostic?"
+  asynUserDiagBin_     = NULL; // "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnosticbin?"
+  asynUserDiagBinIntr_ = NULL; // "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnosticbin?"  
+  asynUserCntrlWd_     = NULL; // "T_SMP_MS=%d/TYPE=asynInt32/ax%d.control="
+  asynUserTargPos_     = NULL; // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetpos="
+  asynUserTargVel_     = NULL; // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetvel="
+  asynUserTargAcc_     = NULL; // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetacc="
+  asynUserSoftLimBwd_  = NULL; // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.soflimbwd="
+  asynUserSoftLimFwd_  = NULL; // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.soflimfwd="
+
+  pasynIFDiagBinIntr_  = NULL;
+  pIFDiagBinIntr_      = NULL;
+  interruptDiagBinPvt_ = NULL;
+
 
   memset(&diagData_,0, sizeof(diagData_));
   memset(&diagBinData_,0, sizeof(diagBinData_));
@@ -224,8 +248,7 @@ EthercatMCAxisEcmc::EthercatMCAxisEcmc(EthercatMCController *pC, int axisNo,
 extern "C" int EthercatMCCreateAxisEcmc(const char *EthercatMCName, int axisNo,
                                     int axisFlags, const char *axisOptionsStr)
 {
-  EthercatMCController *pC;
-
+  
   pC = (EthercatMCController*) findAsynPortDriver(EthercatMCName);
   if (!pC) {
     printf("Error port %s not found\n", EthercatMCName);
@@ -235,6 +258,7 @@ extern "C" int EthercatMCCreateAxisEcmc(const char *EthercatMCName, int axisNo,
   new EthercatMCAxisEcmc(pC, axisNo, axisFlags, axisOptionsStr);
   pC->unlock();
   return asynSuccess;
+  
 }
 
 asynStatus EthercatMCAxisEcmc::updateCfgValue(int function,
@@ -1099,170 +1123,170 @@ void EthercatMCAxisEcmc::callParamCallbacksUpdateError()
   callParamCallbacks();
 }
 
-asynStatus EthercatMCAxisEcmc::pollAll(bool *moving, st_axis_status_type *pst_axis_status)
-{
-  asynStatus comStatus;
+// asynStatus EthercatMCAxisEcmc::pollAll(bool *moving, st_axis_status_type *pst_axis_status)
+// {
+//   asynStatus comStatus;
 
-  int motor_axis_no = 0;
-  int nvals = 0;
-  const char * const Main_dot_str = "Main.";
-  const size_t       Main_dot_len = strlen(Main_dot_str);
-  struct {
-    double velocitySetpoint;
-    double fDecceleration;
-    int cycleCounter;
-    unsigned int EtherCATtime_low32;
-    unsigned int EtherCATtime_high32;
-    int command;
-    int cmdData;
-    int reset;
-    int moving;
-    int stall;
-  } notUsed;
-  if (drvlocal.dirty.initialPollNeeded) {
-    comStatus = initialPoll();
-    if (comStatus) return comStatus;
-  }
+//   int motor_axis_no = 0;
+//   int nvals = 0;
+//   const char * const Main_dot_str = "Main.";
+//   const size_t       Main_dot_len = strlen(Main_dot_str);
+//   struct {
+//     double velocitySetpoint;
+//     double fDecceleration;
+//     int cycleCounter;
+//     unsigned int EtherCATtime_low32;
+//     unsigned int EtherCATtime_high32;
+//     int command;
+//     int cmdData;
+//     int reset;
+//     int moving;
+//     int stall;
+//   } notUsed;
+//   if (drvlocal.dirty.initialPollNeeded) {
+//     comStatus = initialPoll();
+//     if (comStatus) return comStatus;
+//   }
 
-  if (pC_->features_ & FEATURE_BITS_V2) {
-    /* V2 is supported, use it. */
-    snprintf(pC_->outString_, sizeof(pC_->outString_),
-             "%sMain.M%d.stAxisStatusV2?", drvlocal.adsport_str, axisNo_);
-    comStatus = pC_->writeReadOnErrorDisconnect();
-    if (!strncasecmp(pC_->inString_,  Main_dot_str, Main_dot_len)) {
-      nvals = sscanf(&pC_->inString_[Main_dot_len],
-                     "M%d.stAxisStatusV2="
-                     "%lf,%lf,%lf,%lf,%lf,%lf,%lf,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
-                     &motor_axis_no,
-                     &pst_axis_status->fPosition,
-                     &pst_axis_status->fActPosition,
-                     &pst_axis_status->encoderRaw,          /* Send as uint64; parsed as double ! */
-                     &notUsed.velocitySetpoint,
-                     &pst_axis_status->fActVelocity,
-                     &pst_axis_status->fAcceleration,
-                     &notUsed.fDecceleration,
-                     &notUsed.cycleCounter,
-                     &notUsed.EtherCATtime_low32,
-                     &notUsed.EtherCATtime_high32,
-                     &pst_axis_status->bEnable,
-                     &pst_axis_status->bEnabled,
-                     &pst_axis_status->bExecute,
-                     &notUsed.command,
-                     &notUsed.cmdData,
-                     &pst_axis_status->bLimitBwd,
-                     &pst_axis_status->bLimitFwd,
-                     &pst_axis_status->bHomeSensor,
-                     &pst_axis_status->bError,
-                     &pst_axis_status->nErrorId,
-                     &notUsed.reset,
-                     &pst_axis_status->bHomed,
-                     &pst_axis_status->bBusy,
-                     &pst_axis_status->atTarget,
-                     &notUsed.moving,
-                     &notUsed.stall);
-    }
-    if (nvals == 27) {
-      pst_axis_status->mvnNRdyNex = pst_axis_status->bBusy || !pst_axis_status->atTarget;
-    }
-  } else if (pC_->features_ & FEATURE_BITS_V1) {
-    /* Read the complete Axis status */
-    snprintf(pC_->outString_, sizeof(pC_->outString_),
-             "%sMain.M%d.stAxisStatus?", drvlocal.adsport_str, axisNo_);
-    comStatus = pC_->writeReadOnErrorDisconnect();
-    if (comStatus) return comStatus;
-    if (!strncasecmp(pC_->inString_,  Main_dot_str, Main_dot_len)) {
-      nvals = sscanf(&pC_->inString_[Main_dot_len],
-                     "M%d.stAxisStatus="
-                     "%d,%d,%d,%u,%u,%lf,%lf,%lf,%lf,%d,"
-                     "%d,%d,%d,%lf,%d,%d,%d,%u,%lf,%lf,%lf,%d,%d",
-                     &motor_axis_no,
-                     &pst_axis_status->bEnable,        /*  1 */
-                     &pst_axis_status->bReset,         /*  2 */
-                     &pst_axis_status->bExecute,       /*  3 */
-                     &pst_axis_status->nCommand,       /*  4 */
-                     &pst_axis_status->nCmdData,       /*  5 */
-                     &pst_axis_status->fVelocity,      /*  6 */
-                     &pst_axis_status->fPosition,      /*  7 */
-                     &pst_axis_status->fAcceleration,  /*  8 */
-                     &pst_axis_status->fDecceleration, /*  9 */
-                     &pst_axis_status->bJogFwd,        /* 10 */
-                     &pst_axis_status->bJogBwd,        /* 11 */
-                     &pst_axis_status->bLimitFwd,      /* 12 */
-                     &pst_axis_status->bLimitBwd,      /* 13 */
-                     &pst_axis_status->fOverride,      /* 14 */
-                     &pst_axis_status->bHomeSensor,    /* 15 */
-                     &pst_axis_status->bEnabled,       /* 16 */
-                     &pst_axis_status->bError,         /* 17 */
-                     &pst_axis_status->nErrorId,       /* 18 */
-                     &pst_axis_status->fActVelocity,   /* 19 */
-                     &pst_axis_status->fActPosition,   /* 20 */
-                     &pst_axis_status->fActDiff,       /* 21 */
-                     &pst_axis_status->bHomed,         /* 22 */
-                     &pst_axis_status->bBusy           /* 23 */);
-    }
-    if (nvals != 24) {
-      goto pollAllWrongnvals;
-    }
+//   if (pC_->features_ & FEATURE_BITS_V2) {
+//     /* V2 is supported, use it. */
+//     snprintf(pC_->outString_, sizeof(pC_->outString_),
+//              "%sMain.M%d.stAxisStatusV2?", drvlocal.adsport_str, axisNo_);
+//     comStatus = pC_->writeReadOnErrorDisconnect();
+//     if (!strncasecmp(pC_->inString_,  Main_dot_str, Main_dot_len)) {
+//       nvals = sscanf(&pC_->inString_[Main_dot_len],
+//                      "M%d.stAxisStatusV2="
+//                      "%lf,%lf,%lf,%lf,%lf,%lf,%lf,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
+//                      &motor_axis_no,
+//                      &pst_axis_status->fPosition,
+//                      &pst_axis_status->fActPosition,
+//                      &pst_axis_status->encoderRaw,          /* Send as uint64; parsed as double ! */
+//                      &notUsed.velocitySetpoint,
+//                      &pst_axis_status->fActVelocity,
+//                      &pst_axis_status->fAcceleration,
+//                      &notUsed.fDecceleration,
+//                      &notUsed.cycleCounter,
+//                      &notUsed.EtherCATtime_low32,
+//                      &notUsed.EtherCATtime_high32,
+//                      &pst_axis_status->bEnable,
+//                      &pst_axis_status->bEnabled,
+//                      &pst_axis_status->bExecute,
+//                      &notUsed.command,
+//                      &notUsed.cmdData,
+//                      &pst_axis_status->bLimitBwd,
+//                      &pst_axis_status->bLimitFwd,
+//                      &pst_axis_status->bHomeSensor,
+//                      &pst_axis_status->bError,
+//                      &pst_axis_status->nErrorId,
+//                      &notUsed.reset,
+//                      &pst_axis_status->bHomed,
+//                      &pst_axis_status->bBusy,
+//                      &pst_axis_status->atTarget,
+//                      &notUsed.moving,
+//                      &notUsed.stall);
+//     }
+//     if (nvals == 27) {
+//       pst_axis_status->mvnNRdyNex = pst_axis_status->bBusy || !pst_axis_status->atTarget;
+//     }
+//   } else if (pC_->features_ & FEATURE_BITS_V1) {
+//     /* Read the complete Axis status */
+//     snprintf(pC_->outString_, sizeof(pC_->outString_),
+//              "%sMain.M%d.stAxisStatus?", drvlocal.adsport_str, axisNo_);
+//     comStatus = pC_->writeReadOnErrorDisconnect();
+//     if (comStatus) return comStatus;
+//     if (!strncasecmp(pC_->inString_,  Main_dot_str, Main_dot_len)) {
+//       nvals = sscanf(&pC_->inString_[Main_dot_len],
+//                      "M%d.stAxisStatus="
+//                      "%d,%d,%d,%u,%u,%lf,%lf,%lf,%lf,%d,"
+//                      "%d,%d,%d,%lf,%d,%d,%d,%u,%lf,%lf,%lf,%d,%d",
+//                      &motor_axis_no,
+//                      &pst_axis_status->bEnable,        /*  1 */
+//                      &pst_axis_status->bReset,         /*  2 */
+//                      &pst_axis_status->bExecute,       /*  3 */
+//                      &pst_axis_status->nCommand,       /*  4 */
+//                      &pst_axis_status->nCmdData,       /*  5 */
+//                      &pst_axis_status->fVelocity,      /*  6 */
+//                      &pst_axis_status->fPosition,      /*  7 */
+//                      &pst_axis_status->fAcceleration,  /*  8 */
+//                      &pst_axis_status->fDecceleration, /*  9 */
+//                      &pst_axis_status->bJogFwd,        /* 10 */
+//                      &pst_axis_status->bJogBwd,        /* 11 */
+//                      &pst_axis_status->bLimitFwd,      /* 12 */
+//                      &pst_axis_status->bLimitBwd,      /* 13 */
+//                      &pst_axis_status->fOverride,      /* 14 */
+//                      &pst_axis_status->bHomeSensor,    /* 15 */
+//                      &pst_axis_status->bEnabled,       /* 16 */
+//                      &pst_axis_status->bError,         /* 17 */
+//                      &pst_axis_status->nErrorId,       /* 18 */
+//                      &pst_axis_status->fActVelocity,   /* 19 */
+//                      &pst_axis_status->fActPosition,   /* 20 */
+//                      &pst_axis_status->fActDiff,       /* 21 */
+//                      &pst_axis_status->bHomed,         /* 22 */
+//                      &pst_axis_status->bBusy           /* 23 */);
+//     }
+//     if (nvals != 24) {
+//       goto pollAllWrongnvals;
+//     }
 
-    /* V1 new style: mvnNRdyNex follows bBusy */
-    if (pC_->features_ & (FEATURE_BITS_ECMC | FEATURE_BITS_SIM))
-      drvlocal.supported.bV1BusyNewStyle = 1;
+//     /* V1 new style: mvnNRdyNex follows bBusy */
+//     if (pC_->features_ & (FEATURE_BITS_ECMC | FEATURE_BITS_SIM))
+//       drvlocal.supported.bV1BusyNewStyle = 1;
 
-    pst_axis_status->mvnNRdyNex = pst_axis_status->bBusy && pst_axis_status->bEnabled;
-    if (!drvlocal.supported.bV1BusyNewStyle) {
-      /* "V1 old style":done when bEcecute is 0 */
-      pst_axis_status->mvnNRdyNex &= pst_axis_status->bExecute;
-    }
-  } /* End of V1 */
-  /* From here on, either V1 or V2 is supported */
-  if (drvlocal.dirty.statusVer) {
-    if (pC_->features_ & FEATURE_BITS_V2)
-      drvlocal.supported.statusVer = 2;
-    else if ((pC_->features_ & FEATURE_BITS_V1) && !drvlocal.supported.bV1BusyNewStyle)
-      drvlocal.supported.statusVer = 0;
-    else if ((pC_->features_ & FEATURE_BITS_V1) && drvlocal.supported.bV1BusyNewStyle)
-      drvlocal.supported.statusVer = 1;
-    asynPrint(pC_->pasynUserController_, ASYN_TRACE_INFO,
-              "%spollAll(%d) nvals=%d V1=%d V2=%d sim=%d ecmc=%d bV1BusyNew=%d Ver=%d cmd/data=%d/%d fPos=%f fActPos=%f\n",
-              modNamEMC, axisNo_, nvals,
-              pC_->features_ & FEATURE_BITS_V1,
-              pC_->features_ & FEATURE_BITS_V2,
-              pC_->features_ & FEATURE_BITS_SIM,
-              pC_->features_ & FEATURE_BITS_ECMC,
-              drvlocal.supported.bV1BusyNewStyle,
-              drvlocal.supported.statusVer,
-              pst_axis_status->nCommand,
-              pst_axis_status->nCmdData,
-              pst_axis_status->fPosition,
-              pst_axis_status->fActPosition);
-#ifdef motorFlagsHomeOnLsString
-    setIntegerParam(pC_->motorFlagsHomeOnLs_, 1);
-#endif
-#ifdef motorFlagsStopOnProblemString
-    setIntegerParam(pC_->motorFlagsStopOnProblem_, 0);
-#endif
-    drvlocal.dirty.statusVer = 0;
-  }
-  if (axisNo_ != motor_axis_no) return asynError;
+//     pst_axis_status->mvnNRdyNex = pst_axis_status->bBusy && pst_axis_status->bEnabled;
+//     if (!drvlocal.supported.bV1BusyNewStyle) {
+//       /* "V1 old style":done when bEcecute is 0 */
+//       pst_axis_status->mvnNRdyNex &= pst_axis_status->bExecute;
+//     }
+//   } /* End of V1 */
+//   /* From here on, either V1 or V2 is supported */
+//   if (drvlocal.dirty.statusVer) {
+//     if (pC_->features_ & FEATURE_BITS_V2)
+//       drvlocal.supported.statusVer = 2;
+//     else if ((pC_->features_ & FEATURE_BITS_V1) && !drvlocal.supported.bV1BusyNewStyle)
+//       drvlocal.supported.statusVer = 0;
+//     else if ((pC_->features_ & FEATURE_BITS_V1) && drvlocal.supported.bV1BusyNewStyle)
+//       drvlocal.supported.statusVer = 1;
+//     asynPrint(pC_->pasynUserController_, ASYN_TRACE_INFO,
+//               "%spollAll(%d) nvals=%d V1=%d V2=%d sim=%d ecmc=%d bV1BusyNew=%d Ver=%d cmd/data=%d/%d fPos=%f fActPos=%f\n",
+//               modNamEMC, axisNo_, nvals,
+//               pC_->features_ & FEATURE_BITS_V1,
+//               pC_->features_ & FEATURE_BITS_V2,
+//               pC_->features_ & FEATURE_BITS_SIM,
+//               pC_->features_ & FEATURE_BITS_ECMC,
+//               drvlocal.supported.bV1BusyNewStyle,
+//               drvlocal.supported.statusVer,
+//               pst_axis_status->nCommand,
+//               pst_axis_status->nCmdData,
+//               pst_axis_status->fPosition,
+//               pst_axis_status->fActPosition);
+// #ifdef motorFlagsHomeOnLsString
+//     setIntegerParam(pC_->motorFlagsHomeOnLs_, 1);
+// #endif
+// #ifdef motorFlagsStopOnProblemString
+//     setIntegerParam(pC_->motorFlagsStopOnProblem_, 0);
+// #endif
+//     drvlocal.dirty.statusVer = 0;
+//   }
+//   if (axisNo_ != motor_axis_no) return asynError;
 
-  /* Use previous fActPosition and current fActPosition to calculate direction.*/
-  if (pst_axis_status->fActPosition > drvlocal.old_st_axis_status.fActPosition) {
-    pst_axis_status->motorDiffPostion = 1;
-    pst_axis_status->motorStatusDirection = 1;
-  } else if (pst_axis_status->fActPosition < drvlocal.old_st_axis_status.fActPosition) {
-    pst_axis_status->motorDiffPostion = 1;
-    pst_axis_status->motorStatusDirection = 0;
-  }
-  return asynSuccess;
+//   /* Use previous fActPosition and current fActPosition to calculate direction.*/
+//   if (pst_axis_status->fActPosition > drvlocal.old_st_axis_status.fActPosition) {
+//     pst_axis_status->motorDiffPostion = 1;
+//     pst_axis_status->motorStatusDirection = 1;
+//   } else if (pst_axis_status->fActPosition < drvlocal.old_st_axis_status.fActPosition) {
+//     pst_axis_status->motorDiffPostion = 1;
+//     pst_axis_status->motorStatusDirection = 0;
+//   }
+//   return asynSuccess;
 
 
-pollAllWrongnvals:
-  /* rubbish on the line */
-  asynPrint(pC_->pasynUserController_, ASYN_TRACE_ERROR|ASYN_TRACEIO_DRIVER,
-            "%spollAll(%d) nvals=%d out=%s in=%s \n",
-            modNamEMC, axisNo_, nvals, pC_->outString_, pC_->inString_);
-  return asynDisabled;
-}
+// pollAllWrongnvals:
+//   /* rubbish on the line */
+//   asynPrint(pC_->pasynUserController_, ASYN_TRACE_ERROR|ASYN_TRACEIO_DRIVER,
+//             "%spollAll(%d) nvals=%d out=%s in=%s \n",
+//             modNamEMC, axisNo_, nvals, pC_->outString_, pC_->inString_);
+//   return asynDisabled;
+// }
 
 
 /** Polls the axis.
@@ -1292,7 +1316,8 @@ asynStatus EthercatMCAxisEcmc::poll(bool *moving)
   memset(&st_axis_status, 0, sizeof(st_axis_status));
 
   // ---------------------ECMC
-  readAllStatus();
+  //readAllStatus();
+
   uglyConvertFunc(&diagBinData_,&st_axis_status);
   
   // ---------------------ECMC
@@ -2627,6 +2652,50 @@ asynStatus EthercatMCAxisEcmc::connectEcmcAxis() {
       name);
   }
 
+  // try connect interrupt.. Use name from before as drvInfo
+  printf("try connect interrupt.. 1\n");
+  //asynStatus status;
+  asynInterface *pinterface;
+  asynDrvUser *pDrvUser;
+
+  asynUserDiagBinIntr_ = pasynManager->createAsynUser(0,0);
+  status = pasynManager->connectDevice(asynUserDiagBinIntr_, pC_->mcuPortName_, 0);
+  if (status) {
+    //throw std::runtime_error(std::string("connectDevice failed:").append(asynUserDiagBinIntr_->errorMessage));
+    printf("onnectDevice failed....\n");
+    return asynError;
+  }
+  printf("try connect interrupt.. 2\n");
+  pasynIFDiagBinIntr_ = pasynManager->findInterface(asynUserDiagBinIntr_, "asynInt8Array", 1);
+  if (!pasynIFDiagBinIntr_) {
+    //throw std::runtime_error(std::string("findInterface failed:").append(asynInterfaceType));
+    printf("findInterface failed....\n");
+    return asynError;
+  }
+  printf("try connect interrupt.. 3\n");
+  if (!name) return asynError;
+  pinterface = pasynManager->findInterface(asynUserDiagBinIntr_, asynDrvUserType, 1);
+  if (!pinterface) return asynError;
+  pDrvUser = (asynDrvUser *)pinterface->pinterface;
+  status = pDrvUser->create(pinterface->drvPvt, asynUserDiagBinIntr_, name, 0, 0);
+  if (status) {
+    //throw std::runtime_error(std::string("drvUser->create failed:"));
+    printf("drvUser->create failed....\n");
+    return asynError;
+  }
+  printf("try connect interrupt.. 4\n");
+  pIFDiagBinIntr_ = (asynInt8Array *)pasynIFDiagBinIntr_->pinterface;
+  //virtual asynStatus registerInterruptUser(interruptCallbackInt32 pCallback, void *userPvt=0) { 
+  if(interruptDiagBinPvt_!=NULL) return asynError;
+  //if (!userPvt) userPvt=this;
+  status = pIFDiagBinIntr_->registerInterruptUser(pasynIFDiagBinIntr_->drvPvt, asynUserDiagBinIntr_,
+                                                    diagBinCallback, this, &interruptDiagBinPvt_);
+  if (status) {      
+    printf("registerInterruptUser failed....\n");
+    return asynError;
+  }
+  printf("try connect interrupt.. 5\n");
+   
   readAllStatus();
   return asynSuccess;
 }
@@ -2885,44 +2954,44 @@ asynStatus EthercatMCAxisEcmc::readAllStatus() {
 
 //Just for debug
 asynStatus EthercatMCAxisEcmc::printDiagBinData() {
-  
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.axisID = %d\n",diagBinData_.axisID);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.cycleCounter = %d\n",diagBinData_.cycleCounter);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.acceleration = %lf\n",diagBinData_.acceleration);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.deceleration = %lf\n",diagBinData_.deceleration);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.reset = %d\n",diagBinData_.reset);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.moving = %d\n",diagBinData_.moving);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.stall = %d\n",diagBinData_.stall);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.positionSetpoint = %lf\n",diagBinData_.onChangeData.positionSetpoint);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.positionActual = %lf\n",diagBinData_.onChangeData.positionActual);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.positionError = %lf\n",diagBinData_.onChangeData.positionError);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.positionTarget = %lf\n",diagBinData_.onChangeData.positionTarget);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.cntrlError = %lf\n",diagBinData_.onChangeData.cntrlError);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.cntrlOutput = %lf\n",diagBinData_.onChangeData.cntrlOutput);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.velocityActual = %lf\n",diagBinData_.onChangeData.velocityActual);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.velocitySetpoint = %lf\n",diagBinData_.onChangeData.velocitySetpoint);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.velocityFFRaw = %lf\n",diagBinData_.onChangeData.velocityFFRaw);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.positionRaw = %ld\n",diagBinData_.onChangeData.positionRaw);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.error = %d\n",diagBinData_.onChangeData.error);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.velocitySetpointRaw = %d\n",diagBinData_.onChangeData.velocitySetpointRaw);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.seqState = %d\n",diagBinData_.onChangeData.seqState);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.cmdData = %d\n",diagBinData_.onChangeData.cmdData);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.command = %d\n",(int)diagBinData_.onChangeData.command);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.trajInterlock = %d\n",(int)diagBinData_.onChangeData.trajInterlock);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.lastActiveInterlock = %d\n",(int)diagBinData_.onChangeData.lastActiveInterlock);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.trajSource = %d\n",(int)diagBinData_.onChangeData.trajSource);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.encSource = %d\n",(int)diagBinData_.onChangeData.encSource);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.enable = %d\n",diagBinData_.onChangeData.enable);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.enabled = %d\n",diagBinData_.onChangeData.enabled);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.execute = %d\n",diagBinData_.onChangeData.execute);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.busy = %d\n",diagBinData_.onChangeData.busy);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.atTarget = %d\n",diagBinData_.onChangeData.atTarget);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.homed = %d\n",diagBinData_.onChangeData.homed);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.limitFwd = %d\n",diagBinData_.onChangeData.limitFwd);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.limitBwd = %d\n",diagBinData_.onChangeData.limitBwd);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.homeSwitch = %d\n",diagBinData_.onChangeData.homeSwitch);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.sumIlockFwd = %d\n",diagBinData_.onChangeData.sumIlockFwd);
-  asynPrint(pC_->pasynUserSelf, ASYN_TRACE_INFO,"  diagBinData_.onChangeData.sumIlockBwd = %d\n",diagBinData_.onChangeData.sumIlockBwd);
+  int asynLevel=ASYN_TRACE_ERROR;
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.axisID = %d\n",diagBinData_.axisID);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.cycleCounter = %d\n",diagBinData_.cycleCounter);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.acceleration = %lf\n",diagBinData_.acceleration);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.deceleration = %lf\n",diagBinData_.deceleration);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.reset = %d\n",diagBinData_.reset);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.moving = %d\n",diagBinData_.moving);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.stall = %d\n",diagBinData_.stall);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.onChangeData.positionSetpoint = %lf\n",diagBinData_.onChangeData.positionSetpoint);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.onChangeData.positionActual = %lf\n",diagBinData_.onChangeData.positionActual);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.onChangeData.positionError = %lf\n",diagBinData_.onChangeData.positionError);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.onChangeData.positionTarget = %lf\n",diagBinData_.onChangeData.positionTarget);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.onChangeData.cntrlError = %lf\n",diagBinData_.onChangeData.cntrlError);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.onChangeData.cntrlOutput = %lf\n",diagBinData_.onChangeData.cntrlOutput);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.onChangeData.velocityActual = %lf\n",diagBinData_.onChangeData.velocityActual);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.onChangeData.velocitySetpoint = %lf\n",diagBinData_.onChangeData.velocitySetpoint);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.onChangeData.velocityFFRaw = %lf\n",diagBinData_.onChangeData.velocityFFRaw);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.onChangeData.positionRaw = %ld\n",diagBinData_.onChangeData.positionRaw);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.onChangeData.error = %d\n",diagBinData_.onChangeData.error);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.onChangeData.velocitySetpointRaw = %d\n",diagBinData_.onChangeData.velocitySetpointRaw);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.onChangeData.seqState = %d\n",diagBinData_.onChangeData.seqState);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.onChangeData.cmdData = %d\n",diagBinData_.onChangeData.cmdData);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.onChangeData.command = %d\n",(int)diagBinData_.onChangeData.command);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.onChangeData.trajInterlock = %d\n",(int)diagBinData_.onChangeData.trajInterlock);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.onChangeData.lastActiveInterlock = %d\n",(int)diagBinData_.onChangeData.lastActiveInterlock);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.onChangeData.trajSource = %d\n",(int)diagBinData_.onChangeData.trajSource);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.onChangeData.encSource = %d\n",(int)diagBinData_.onChangeData.encSource);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.onChangeData.enable = %d\n",diagBinData_.onChangeData.enable);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.onChangeData.enabled = %d\n",diagBinData_.onChangeData.enabled);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.onChangeData.execute = %d\n",diagBinData_.onChangeData.execute);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.onChangeData.busy = %d\n",diagBinData_.onChangeData.busy);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.onChangeData.atTarget = %d\n",diagBinData_.onChangeData.atTarget);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.onChangeData.homed = %d\n",diagBinData_.onChangeData.homed);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.onChangeData.limitFwd = %d\n",diagBinData_.onChangeData.limitFwd);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.onChangeData.limitBwd = %d\n",diagBinData_.onChangeData.limitBwd);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.onChangeData.homeSwitch = %d\n",diagBinData_.onChangeData.homeSwitch);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.onChangeData.sumIlockFwd = %d\n",diagBinData_.onChangeData.sumIlockFwd);
+  asynPrint(pC_->pasynUserSelf, asynLevel,"  diagBinData_.onChangeData.sumIlockBwd = %d\n",diagBinData_.onChangeData.sumIlockBwd);
   return asynSuccess;
 }
 
@@ -2964,5 +3033,12 @@ asynStatus EthercatMCAxisEcmc::uglyConvertFunc(ecmcAxisStatusType*in ,st_axis_st
   out->fOverride            = 100;
 
   oldPositionAct_ =  in->onChangeData.positionActual;
+
+
+  printDiagBinData();
   return asynSuccess;
+}
+
+ecmcAxisStatusType *EthercatMCAxisEcmc::getDiagBinDataPtr(){
+  return &diagBinData_;
 }

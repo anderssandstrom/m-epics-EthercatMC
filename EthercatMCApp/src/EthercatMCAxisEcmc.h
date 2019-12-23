@@ -15,7 +15,7 @@ FILENAME...   EthercatMCAxis.h
 #define AMPLIFIER_ON_FLAG_AUTO_ON      (1<<1)
 #define AMPLIFIER_ON_FLAG_USING_CNEN   (1<<2)
 
-// ECMC
+// ECMC ###########################################################################################
 #define ECMC_MAX_ASYN_DIAG_STR_LEN    256
 #define ECMC_MAX_ASYN_DRVINFO_STR_LEN 128
 // Statuses
@@ -27,8 +27,9 @@ FILENAME...   EthercatMCAxis.h
 #define ECMC_ASYN_AXIS_TARG_POS_STRING      "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetpos="
 #define ECMC_ASYN_AXIS_TARG_VEL_STRING      "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetvel="
 #define ECMC_ASYN_AXIS_TARG_ACC_STRING      "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetacc="
-#define ECMC_ASYN_AXIS_SOFT_LIM_BWD_STRING  "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.soflimbwd="
-#define ECMC_ASYN_AXIS_SOFT_LIM_FWD_STRING  "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.soflimfwd="
+#define ECMC_ASYN_AXIS_SOFT_LIM_BWD_STRING  "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.softlimbwd="
+#define ECMC_ASYN_AXIS_SOFT_LIM_FWD_STRING  "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.softlimfwd="
+
 
 // TODO Use common h file with ECMC for below types (or merge ECMC and this driver)
 typedef struct {
@@ -184,6 +185,7 @@ typedef struct {
   bool                       stall;
   ecmcAxisStatusOnChangeType onChangeData;
 } ecmcAxisStatusType;
+
 //ECMC End
 
 extern const char *modNamEMC;
@@ -247,10 +249,13 @@ public:
   asynStatus home(double min_velocity, double max_velocity, double acceleration, int forwards);
   asynStatus stop(double acceleration);
   void       callParamCallbacksUpdateError();
-  asynStatus pollAll(bool *moving);
-  asynStatus pollAll(bool *moving, st_axis_status_type *pst_axis_status);
+  //asynStatus pollAll(bool *moving);
+  //asynStatus pollAll(bool *moving, st_axis_status_type *pst_axis_status);
   asynStatus poll(bool *moving);
 
+  // ECMC ##############
+  ecmcAxisStatusType *getDiagBinDataPtr();
+  // ECMC End ##############
 private:
   typedef enum
   {
@@ -427,6 +432,7 @@ private:
   asynUser *asynUserStatWd_;      // "T_SMP_MS=%d/TYPE=asynInt32/ax%d.status?"
   asynUser *asynUserDiagStr_;     // "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnostic?"  
   asynUser *asynUserDiagBin_;     // "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnosticbin?"  
+  asynUser *asynUserDiagBinIntr_; // "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnosticbin?"  
   asynUser *asynUserCntrlWd_;     // "T_SMP_MS=%d/TYPE=asynInt32/ax%d.control="
   asynUser *asynUserTargPos_;     // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetpos="
   asynUser *asynUserTargVel_;     // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetvel="
@@ -439,6 +445,9 @@ private:
   ecmcAxisStatusWordType statusWd_;
   ecmcDiagStringData     diagData_;
   ecmcAxisStatusType     diagBinData_;
+  asynInterface *pasynIFDiagBinIntr_;
+  asynInt8Array *pIFDiagBinIntr_;
+  void          *interruptDiagBinPvt_;
 
   double oldPositionAct_;  // needed for uglyConvertFunc().. 
   // ECMC end
