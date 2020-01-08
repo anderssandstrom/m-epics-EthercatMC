@@ -21,37 +21,14 @@ FILENAME...   EthercatMCAxis.h
 // Statuses
 #define ECMC_ASYN_AXIS_STAT_STRING          "T_SMP_MS=%d/TYPE=asynInt32/ax%d.status?"
 #define ECMC_ASYN_AXIS_DIAG_STRING          "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnostic?"
-#define ECMC_ASYN_AXIS_DIAG_BIN_STRING      "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnosticbin?"
+#define ECMC_ASYN_AXIS_STAT_BIN_STRING      "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.statusbin?"
 // Control
-#define ECMC_ASYN_AXIS_CONT_STRING          "T_SMP_MS=%d/TYPE=asynInt32/ax%d.control="
-#define ECMC_ASYN_AXIS_TARG_POS_STRING      "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetpos="
-#define ECMC_ASYN_AXIS_TARG_VEL_STRING      "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetvel="
-#define ECMC_ASYN_AXIS_TARG_ACC_STRING      "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetacc="
-#define ECMC_ASYN_AXIS_SOFT_LIM_BWD_STRING  "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.softlimbwd="
-#define ECMC_ASYN_AXIS_SOFT_LIM_FWD_STRING  "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.softlimfwd="
-
-
-// TODO Use common h file with ECMC for below types (or merge ECMC and this driver)
-typedef struct {
-  unsigned char              enabled:1;
-  unsigned char              execute:1;
-  unsigned char              busy:1;
-  unsigned char              attarget:1;
-  unsigned char              moving:1;
-  unsigned char              limitfwd:1;
-  unsigned char              limitbwd:1;
-  unsigned char              homeswitch:1;
-  unsigned char              instartup:1;
-  unsigned char              inrealtime:1;
-  unsigned char              trajsource:1;
-  unsigned char              encsource:1;
-  unsigned char              plccmdallowed:1;
-  unsigned char              softlimfwdena:1;
-  unsigned char              softlimbwdena:1;
-  unsigned char              unused:1;
-  unsigned char              seqstate:8;
-  unsigned char              lastilock:8;
-} ecmcAxisStatusWordType;
+#define ECMC_ASYN_AXIS_CONT_STRING          "T_SMP_MS=%d/TYPE=asynInt8ArrayOut/ax%d.controlbin?"
+//#define ECMC_ASYN_AXIS_TARG_POS_STRING      "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetpos="
+//#define ECMC_ASYN_AXIS_TARG_VEL_STRING      "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetvel="
+//#define ECMC_ASYN_AXIS_TARG_ACC_STRING      "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetacc="
+//#define ECMC_ASYN_AXIS_SOFT_LIM_BWD_STRING  "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.softlimbwd="
+//#define ECMC_ASYN_AXIS_SOFT_LIM_FWD_STRING  "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.softlimfwd="
 
 typedef struct {
   unsigned char              enable:1;
@@ -59,11 +36,20 @@ typedef struct {
   unsigned char              reset:1;
   unsigned char              softlimfwdena:1;
   unsigned char              softlimbwdena:1;
-  unsigned char              unused_1:3;
+  unsigned char              trigg:3;
   unsigned char              unused_2:8;
   unsigned char              cmd:8;
   unsigned int               cmddata:8;
 }ecmcAxisControlWordType;
+
+typedef struct {
+  ecmcAxisControlWordType    controlwd;
+  double                     softlimfwd;
+  double                     softlimbwd;
+  double                     targetpos;
+  double                     targetvel;
+  double                     targetacc;
+}ecmcAsynClinetCmdType;
 
 // 6,0.000000,0.000000,0.000000,0.000000,0.000000,0,0.000000,0.000000,0.000000,0.000000,0,8598,0,0,0,0,0,0,0,1,0,0,0,0,1,1,1,1,1
 typedef struct {
@@ -141,6 +127,30 @@ enum dataSource {
   ECMC_DATA_SOURCE_EXTERNALENCODER    = 1,
   ECMC_DATA_SOURCE_EXTERNALTRAJECTORY = 2
 };
+typedef struct {
+  unsigned char              enable        : 1;
+  unsigned char              enabled       : 1;
+  unsigned char              execute       : 1;
+  unsigned char              busy          : 1;
+  unsigned char              attarget      : 1;
+  unsigned char              moving        : 1;
+  unsigned char              limitfwd      : 1;
+  unsigned char              limitbwd      : 1;
+  unsigned char              homeswitch    : 1;
+  unsigned char              instartup     : 1;
+  unsigned char              inrealtime    : 1;
+  unsigned char              trajsource    : 1;
+  unsigned char              encsource     : 1;
+  unsigned char              plccmdallowed : 1;
+  unsigned char              softlimfwdena : 1;
+  unsigned char              softlimbwdena : 1;
+  unsigned char              homed         : 1;
+  unsigned char              sumilockfwd   : 1;
+  unsigned char              sumilockbwd   : 1;
+  unsigned char              unused        : 1;
+  unsigned char              seqstate      : 4;
+  unsigned char              lastilock     : 8;
+} ecmcAxisStatusWordType;
 
 typedef struct {
   double             positionSetpoint;
@@ -159,20 +169,7 @@ typedef struct {
   int                cmdData;
   motionCommandTypes command;
   interlockTypes     trajInterlock;
-  interlockTypes     lastActiveInterlock;
-  dataSource         trajSource;
-  dataSource         encSource;
-  bool               enable;
-  bool               enabled;
-  bool               execute;
-  bool               busy;
-  bool               atTarget;
-  bool               homed;
-  bool               limitFwd;
-  bool               limitBwd;
-  bool               homeSwitch;
-  bool               sumIlockFwd;
-  bool               sumIlockBwd;
+  ecmcAxisStatusWordType statusWd;
 } ecmcAxisStatusOnChangeType;
 
 typedef struct {
@@ -180,9 +177,11 @@ typedef struct {
   int                        cycleCounter;
   double                     acceleration;
   double                     deceleration;
-  bool                       reset;
-  bool                       moving;
-  bool                       stall;
+  double                     soflimFwd;
+  double                     soflimBwd;
+  bool                       reset  : 1;
+  bool                       moving : 1;
+  bool                       stall  : 1;
   ecmcAxisStatusOnChangeType onChangeData;
 } ecmcAxisStatusType;
 
@@ -254,7 +253,9 @@ public:
   asynStatus poll(bool *moving);
 
   // ECMC ##############
-  ecmcAxisStatusType *getDiagBinDataPtr();
+  asynStatus statBinDataCallback(epicsInt8 *data);
+  asynStatus contBinDataCallback(epicsInt8 *data);
+  // asynStatus statusWdDataCallback(epicsInt32 status);
   // ECMC End ##############
 private:
   typedef enum
@@ -415,41 +416,55 @@ private:
 
   // ECMC specific
   asynStatus connectEcmcAxis();
-  asynStatus readStatusWd();
-  asynStatus readDiagStr();       // Read ascii diag data over int8array interface
-  asynStatus readDiagBin();       // Read binary diag data over int8array interface
+  //asynStatus readStatusWd();
+  // asynStatus readDiagStr();       // Read ascii diag data over int8array interface
+  asynStatus readStatBin();       // Read binary diag data over int8array interface
   asynStatus readAllStatus();
-  asynStatus readControlWd(ecmcAxisControlWordType *controlWd);
-  asynStatus writeControlWd(ecmcAxisControlWordType controlWd);
-  asynStatus writeTargetPos(double pos);
-  asynStatus writeTargetVel(double vel);
-  asynStatus writeTargetAcc(double acc);
-  asynStatus writeSoftLimBwd(double softlimbwd);
-  asynStatus writeSoftLimFwd(double softlimfwd);
+  asynStatus readControlBin(ecmcAsynClinetCmdType *controlWd);
+  asynStatus writeControlBin(ecmcAsynClinetCmdType controlWd);
+  // asynStatus writeTargetPos(double pos);
+  // asynStatus writeTargetVel(double vel);
+  // asynStatus writeTargetAcc(double acc);
+  // asynStatus writeSoftLimBwd(double softlimbwd);
+  // asynStatus writeSoftLimFwd(double softlimfwd);  
   asynStatus printDiagBinData();
   // Temporary convert betwwen differnt structure types.. Remove later
   asynStatus uglyConvertFunc(ecmcAxisStatusType*in ,st_axis_status_type *out);
-  asynUser *asynUserStatWd_;      // "T_SMP_MS=%d/TYPE=asynInt32/ax%d.status?"
-  asynUser *asynUserDiagStr_;     // "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnostic?"  
-  asynUser *asynUserDiagBin_;     // "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnosticbin?"  
-  asynUser *asynUserDiagBinIntr_; // "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnosticbin?"  
-  asynUser *asynUserCntrlWd_;     // "T_SMP_MS=%d/TYPE=asynInt32/ax%d.control="
-  asynUser *asynUserTargPos_;     // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetpos="
-  asynUser *asynUserTargVel_;     // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetvel="
-  asynUser *asynUserTargAcc_;     // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetacc="
-  asynUser *asynUserSoftLimBwd_;  // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.soflimbwd="
-  asynUser *asynUserSoftLimFwd_;  // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.soflimfwd="
+  // asynUser *asynUserStatWd_;       // "T_SMP_MS=%d/TYPE=asynInt32/ax%d.status?"
+  // asynUser *asynUserStatWdIntr_;   // "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnosticbin?"  
+  // asynUser *asynUserStatStr_;      // "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnostic?"  
+  asynUser *asynUserStatBin_;      // "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnosticbin?"  
+  asynUser *asynUserStatBinIntr_;  // "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnosticbin?"  
+  asynUser *asynUserCntrlBin_;     // "T_SMP_MS=%d/TYPE=asynInt32/ax%d.controlstruct="
+  asynUser *asynUserCntrlBinIntr_; // "T_SMP_MS=%d/TYPE=asynInt32/ax%d.controlstruct?"
+
+  // asynUser *asynUserTargPos_;     // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetpos="
+  // asynUser *asynUserTargVel_;     // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetvel="
+  // asynUser *asynUserTargAcc_;     // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetacc="
+  // asynUser *asynUserSoftLimBwd_;  // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.soflimbwd="
+  // asynUser *asynUserSoftLimFwd_;  // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.soflimfwd="
   char      diagStringBuffer_[ECMC_MAX_ASYN_DIAG_STR_LEN];
   int       axisId_;
   //double    actPos_;
-  ecmcAxisStatusWordType statusWd_;
-  ecmcDiagStringData     diagData_;
-  ecmcAxisStatusType     diagBinData_;
-  asynInterface *pasynIFDiagBinIntr_;
-  asynInt8Array *pIFDiagBinIntr_;
-  void          *interruptDiagBinPvt_;
+  //ecmcAxisStatusWordType  statusWd_;
+  ecmcAsynClinetCmdType   controlBinData_;
+  ecmcAsynClinetCmdType   controlBinDataRB_;
+  //ecmcDiagStringData      diagData_;
+  ecmcAxisStatusType      statusBinData_;
+  
+  asynInterface          *pasynIFStatBinIntr_;
+  asynInt8Array          *pIFStatBinIntr_;
+  void                   *interruptStatBinPvt_;
 
-  double oldPositionAct_;  // needed for uglyConvertFunc().. 
+  // asynInterface          *pasynIFStatusWdIntr_;
+  // asynInt32              *pIFStatusWdIntr_;
+  // void                   *interruptStatusWdPvt_;
+  
+  asynInterface          *pasynIFContBinIntr_;
+  asynInt8Array          *pIFContBinIntr_;
+  void                   *interruptContBinPvt_;
+
+  double                  oldPositionAct_;  // needed for uglyConvertFunc().. 
   // ECMC end
   friend class EthercatMCController;
 };
