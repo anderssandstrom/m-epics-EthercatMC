@@ -36,68 +36,54 @@ typedef struct {
   unsigned char              reset:1;
   unsigned char              softlimfwdena:1;
   unsigned char              softlimbwdena:1;
-  unsigned char              trigg:3;
+  unsigned char              trigg:4;
   unsigned char              unused_2:8;
   unsigned char              cmd:8;
   unsigned int               cmddata:8;
 }ecmcAxisControlWordType;
 
-typedef struct {
-  ecmcAxisControlWordType    controlwd;
-  double                     softlimfwd;
-  double                     softlimbwd;
-  double                     targetpos;
-  double                     targetvel;
-  double                     targetacc;
-}ecmcAsynClinetCmdType;
+// typedef struct {
+//   double                     softlimfwd;
+//   double                     softlimbwd;
+//   double                     targetpos;
+//   double                     targetvel;
+//   double                     targetacc;
+//   double                     homeposition;
+//   ecmcAxisControlWordType    controlwd;
+// }ecmcAsynClinetCmdType;
 
-// 6,0.000000,0.000000,0.000000,0.000000,0.000000,0,0.000000,0.000000,0.000000,0.000000,0,8598,0,0,0,0,0,0,0,1,0,0,0,0,1,1,1,1,1
-typedef struct {
-  int    axId;            // 1
-  double setpos;          // 2
-  double actpos;          // 3
-  double poserr;          // 4
-  double targpos;         // 5
-  double targposerr;      // 6
-  int    rawpos;          // 7
-  double cntrlout;        // 8
-  double setvel;          // 9
-  double actvel;          // 10
-  double rawvelff;        // 11
-  int    rawvel;          // 12     
-  int    cyclecnt;        // 13
-  int    error;           // 14
-  int    cmd;             // 15
-  int    cmddata;         // 16
-  int    seqstate;        // 17
-  int    ilock;           // 18
-  int    ilocklastactive; // 19
-  int    trajsource;      // 20
-  int    encsource;       // 21
-  int    enable;          // 22
-  int    enabled;         // 23
-  int    execute;         // 24
-  int    busy;            // 25
-  int    attarget;        // 26
-  int    homed;           // 27
-  int    lowlim;          // 28
-  int    highlim;         // 29
-  int    homesensor;      // 30
-} ecmcDiagStringData;
-
-enum motionCommandTypes {
-  ECMC_CMD_NOCMD      = -1,
-  ECMC_CMD_JOG        = 0,
-  ECMC_CMD_MOVEVEL    = 1,
-  ECMC_CMD_MOVEREL    = 2,
-  ECMC_CMD_MOVEABS    = 3,
-  ECMC_CMD_MOVEMODULO = 4,   // NOT IMPLEMENTED
-  ECMC_CMD_HOMING     = 10,  // PARTLY IMPLEMENTED
-  // NOT IMPLEMENTED (implemented in another way..)
-  ECMC_CMD_SUPERIMP   = 20,  // NOT IMPLEMENTED
-  // NOT IMPLEMENTED (implemented in another way..)
-  ECMC_CMD_GEAR       = 30,
+enum motionCommandTypes {             // Data order for motor record communications
+  ECMC_CMD_NOCMD              = -1,   
+  ECMC_CMD_JOG                = 0,    
+  ECMC_CMD_MOVEVEL            = 1,    // cmd, vel, acc
+  ECMC_CMD_MOVEREL            = 2,    // cmd, pos, vel, acc
+  ECMC_CMD_MOVEABS            = 3,    // cmd, pos, vel, acc
+  ECMC_CMD_MOVEMODULO         = 4,    
+  ECMC_CMD_HOMING             = 10,   // cmd, seqnbr,homepos,velhigh,vellow,acc
+  ECMC_CMD_SUPERIMP           = 20,   
+  ECMC_CMD_GEAR               = 30,   
+  ECMC_CMD_STOP               = 100,  // cmd, (Should have been 0 instead of 100)
+  ECMC_CMD_SET_ENABLE         = 101,  // cmd, enable
+  ECMC_CMD_SET_SOFTLIMBWD     = 102,  // cmd, soflimbwd
+  ECMC_CMD_SET_SOFTLIMFWD     = 103,  // cmd, soflimfwd
+  ECMC_CMD_SET_SOFTLIMBWD_ENA = 104,  // cmd, soflimbwdena
+  ECMC_CMD_SET_SOFTLIMFWD_ENA = 105,  // cmd, soflimfwdena
+  ECMC_CMD_SET_RESET          = 106,  // cmd
 };
+
+typedef struct {
+  motionCommandTypes         cmd;  
+  double                     val0;
+  double                     val1;
+  double                     val2;
+  double                     val3;
+  double                     val4;
+  double                     val5;
+  double                     val6;
+  double                     val7;
+  double                     val8;
+  double                     val9;
+}ecmcAsynClinetCmdType;
 
 enum interlockTypes {
   ECMC_INTERLOCK_NONE                              = 0,
@@ -163,6 +149,7 @@ typedef struct {
   double             velocitySetpoint;
   double             velocityFFRaw;
   int64_t            positionRaw;
+  double             homeposition;
   int                error;
   int                velocitySetpointRaw;
   int                seqState;
@@ -240,22 +227,28 @@ public:
   EthercatMCAxisEcmc(class EthercatMCController *pC, int axisNo,
             int axisFlags, const char *axisOptionsStr);
   void report(FILE *fp, int level);
-  asynStatus mov2(double posEGU, int nCommand, double maxVeloEGU, double accEGU);
-  asynStatus move(double position, int relative, double min_velocity, double max_velocity, double acceleration);
-  asynStatus moveVelocity(double min_velocity, double max_velocity, double acceleration);
+  //asynStatus mov2(double posEGU, int nCommand, double maxVeloEGU, double accEGU);
+  
+  
   asynStatus setPosition(double);
 
   asynStatus home(double min_velocity, double max_velocity, double acceleration, int forwards);
-  asynStatus stop(double acceleration);
   void       callParamCallbacksUpdateError();
   //asynStatus pollAll(bool *moving);
   //asynStatus pollAll(bool *moving, st_axis_status_type *pst_axis_status);
+
+  // done ECMC
+  asynStatus moveVelocity(double min_velocity, double max_velocity, double acceleration);
+  asynStatus stop(double acceleration);
+  asynStatus move(double position, int relative, double min_velocity, double max_velocity, double acceleration);
+
+  // partly ECMC
   asynStatus poll(bool *moving);
 
-  // ECMC ##############
+  // ECMC  added##############
   asynStatus statBinDataCallback(epicsInt8 *data);
   asynStatus contBinDataCallback(epicsInt8 *data);
-  // asynStatus statusWdDataCallback(epicsInt32 status);
+
   // ECMC End ##############
 private:
   typedef enum
@@ -300,9 +293,9 @@ private:
     int old_EPICS_nErrorId; /* old nErrorID from MCU */
 
     int old_bError;   /* copy of bError */
-#ifndef motorWaitPollsBeforeReadyString
+
     unsigned int waitNumPollsBeforeReady;
-#endif
+
     int nCommandActive;
     int old_nCommandActive;
     int homed;
@@ -403,62 +396,39 @@ private:
   asynStatus resetAxis(void);
   //bool       pollPowerIsOn(void);
   asynStatus enableAmplifier(int);
-  asynStatus sendVelocityAndAccelExecute(double maxVeloEGU, double accEGU);
   asynStatus setClosedLoop(bool closedLoop);
   asynStatus setIntegerParam(int function, int value);
   asynStatus setDoubleParam(int function, double value);
   asynStatus setStringParamDbgStrToMcu(const char *value);
   asynStatus setStringParam(int function, const char *value);
-  asynStatus stopAxisInternal(const char *function_name, double acceleration);
 #ifndef motorMessageTextString
   void updateMsgTxtFromDriver(const char *value);
 #endif
 
+  //  Done
+  asynStatus stopAxisInternal(const char *function_name, double acceleration);
   // ECMC specific
   asynStatus connectEcmcAxis();
-  //asynStatus readStatusWd();
-  // asynStatus readDiagStr();       // Read ascii diag data over int8array interface
-  asynStatus readStatBin();       // Read binary diag data over int8array interface
-  asynStatus readAllStatus();
-  asynStatus readControlBin(ecmcAsynClinetCmdType *controlWd);
+  asynStatus readStatusBin();        // Read binary status data over int8array interface
+  asynStatus readAll();
+  asynStatus readControlBin();       // Read binary control data over int8array interface
   asynStatus writeControlBin(ecmcAsynClinetCmdType controlWd);
-  // asynStatus writeTargetPos(double pos);
-  // asynStatus writeTargetVel(double vel);
-  // asynStatus writeTargetAcc(double acc);
-  // asynStatus writeSoftLimBwd(double softlimbwd);
-  // asynStatus writeSoftLimFwd(double softlimfwd);  
   asynStatus printDiagBinData();
   // Temporary convert betwwen differnt structure types.. Remove later
   asynStatus uglyConvertFunc(ecmcAxisStatusType*in ,st_axis_status_type *out);
-  // asynUser *asynUserStatWd_;       // "T_SMP_MS=%d/TYPE=asynInt32/ax%d.status?"
-  // asynUser *asynUserStatWdIntr_;   // "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnosticbin?"  
-  // asynUser *asynUserStatStr_;      // "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnostic?"  
   asynUser *asynUserStatBin_;      // "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnosticbin?"  
   asynUser *asynUserStatBinIntr_;  // "T_SMP_MS=%d/TYPE=asynInt8ArrayIn/ax%d.diagnosticbin?"  
   asynUser *asynUserCntrlBin_;     // "T_SMP_MS=%d/TYPE=asynInt32/ax%d.controlstruct="
   asynUser *asynUserCntrlBinIntr_; // "T_SMP_MS=%d/TYPE=asynInt32/ax%d.controlstruct?"
-
-  // asynUser *asynUserTargPos_;     // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetpos="
-  // asynUser *asynUserTargVel_;     // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetvel="
-  // asynUser *asynUserTargAcc_;     // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.targetacc="
-  // asynUser *asynUserSoftLimBwd_;  // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.soflimbwd="
-  // asynUser *asynUserSoftLimFwd_;  // "T_SMP_MS=%d/TYPE=asynFloat64/ax%d.soflimfwd="
-  char      diagStringBuffer_[ECMC_MAX_ASYN_DIAG_STR_LEN];
   int       axisId_;
-  //double    actPos_;
-  //ecmcAxisStatusWordType  statusWd_;
   ecmcAsynClinetCmdType   controlBinData_;
   ecmcAsynClinetCmdType   controlBinDataRB_;
-  //ecmcDiagStringData      diagData_;
+
   ecmcAxisStatusType      statusBinData_;
   
   asynInterface          *pasynIFStatBinIntr_;
   asynInt8Array          *pIFStatBinIntr_;
   void                   *interruptStatBinPvt_;
-
-  // asynInterface          *pasynIFStatusWdIntr_;
-  // asynInt32              *pIFStatusWdIntr_;
-  // void                   *interruptStatusWdPvt_;
   
   asynInterface          *pasynIFContBinIntr_;
   asynInt8Array          *pIFContBinIntr_;
