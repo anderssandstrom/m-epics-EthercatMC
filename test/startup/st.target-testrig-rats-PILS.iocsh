@@ -1,0 +1,91 @@
+# Issue this command to start target ioc (from EthercatMC/test dir):
+# ./run-ethercatmc-ioc.sh target-testrig-rats-PILS -1
+
+require ethercatmc, develop
+
+epicsEnvSet("MOTOR_PORT",    "$(SM_MOTOR_PORT=MCU1)")
+
+epicsEnvSet("IPADDR",        "$(SM_IPADDR=172.30.2.35)")
+epicsEnvSet("IPPORT",        "$(SM_IPPORT=48898)")
+epicsEnvSet("ASYN_PORT",     "$(SM_ASYN_PORT=MC_CPU1)")
+epicsEnvSet("PREFIX",        "$(SM_PREFIX=TARGET_TEST:MC-MCU-001:)")
+epicsEnvSet("PREC",          "$(SM_PREC=3)")
+epicsEnvSet("SM_NOAXES",     "3")
+epicsEnvSet("ECM_OPTIONS",   "adsPort=852;amsNetIdRemote=172.30.2.35.1.1;amsNetIdLocal=172.30.2.34.1.1"
+
+# No poller yet, see ethercatmcStartPoller at the end of the script
+epicsEnvSet("ECM_MOVINGPOLLPERIOD", "0")
+epicsEnvSet("ECM_IDLEPOLLPERIOD", "0")
+< ethercatmcController.iocsh
+
+#
+#
+#
+#< ethercatmcEL6688-PTP.iocsh
+#< ethercatmcEL6688-ExtSync.iocsh
+
+#
+# Axis 1
+#
+epicsEnvSet("AXISCONFIG",    "")
+epicsEnvSet("MOTOR_NAME",    "$(SM_MOTOR_NAME=m1)")
+epicsEnvSet("AXIS_NO",       "$(SM_AXIS_NO=1)")
+epicsEnvSet("DESC",          "$(SM_DESC=DESC)")
+epicsEnvSet("EGU",           "$(SM_EGU=EGU)")
+< ethercatmcIndexerAxis.iocsh
+< ethercatmcAxisdebug.iocsh
+< ethercatmcAxishome.iocsh
+
+
+#
+# Axis 2
+#
+epicsEnvSet("AXISCONFIG",    "")
+epicsEnvSet("MOTOR_NAME",    "$(SM_MOTOR_NAME=m2)")
+epicsEnvSet("AXIS_NO",       "$(SM_AXIS_NO=2)")
+< ethercatmcIndexerAxis.iocsh
+< ethercatmcAxisdebug.iocsh
+< ethercatmcAxishome.iocsh
+
+#
+# Axis 3
+#
+epicsEnvSet("AXISCONFIG",    "")
+epicsEnvSet("MOTOR_NAME",    "$(SM_MOTOR_NAME=m3)")
+epicsEnvSet("AXIS_NO",       "$(SM_AXIS_NO=3)")
+< ethercatmcIndexerAxis.iocsh
+< ethercatmcAxisdebug.iocsh
+< ethercatmcAxishome.iocsh
+
+#
+# Analog input
+# Obs: new prefix
+#
+epicsEnvSet("P",             "TARGET_TEST:LSR-001:")
+epicsEnvSet("R",             "AnalogInput")
+epicsEnvSet("DESC",          "LaserDiodeSensor1")
+epicsEnvSet("ASYNPARAMNAME", "AnalogInput")
+epicsEnvSet("CHNO",          "0")
+epicsEnvSet("ECEL3162FIELDINIT", "")
+< ethercatmcEL3162-OneChannel.iocsh
+
+#
+# Analog input
+# Obs: new prefix
+#
+epicsEnvSet("P",             "TARGET_TEST:LSR-002:")
+epicsEnvSet("R",             "AnalogInput")
+epicsEnvSet("DESC",          "LaserDiodeSensor2")
+epicsEnvSet("ASYNPARAMNAME", "AnalogInput")
+epicsEnvSet("CHNO",          "0")
+epicsEnvSet("ECEL3162FIELDINIT", "")
+< ethercatmcEL3162-OneChannel.iocsh
+
+
+#
+# Start polling, values are in millisconds
+#
+epicsEnvSet("MOVINGPOLLPERIOD", "100")
+epicsEnvSet("IDLEPOLLPERIOD",   "100")
+ethercatmcStartPoller("$(MOTOR_PORT)", "$(MOVINGPOLLPERIOD)", "$(IDLEPOLLPERIOD)")
+
